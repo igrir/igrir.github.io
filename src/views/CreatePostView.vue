@@ -302,8 +302,11 @@ const handlePublish = async () => {
       <div class="blocks-container">
         <div v-for="(block, index) in blocks" :key="block.id" class="block-wrapper mb-8">
           <div class="d-flex align-start position-relative">
-            <!-- Left Side Controls (Move/Delete) -->
+            <!-- Left Side Controls -->
             <div class="side-controls d-flex flex-column align-center mr-4">
+              <v-btn icon="mdi-plus" variant="text" size="x-small" color="secondary" class="mb-1" @click="addTextBlock(index)" title="Add Text"></v-btn>
+              <v-btn icon="mdi-camera-plus-outline" variant="text" size="x-small" color="secondary" class="mb-1" @click="addImageBlock(index)" title="Add Image"></v-btn>
+              <v-divider class="my-1 w-50"></v-divider>
               <v-btn v-if="index > 0" icon="mdi-chevron-up" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, -1)" title="Move Up"></v-btn>
               <v-btn v-if="index < blocks.length - 1" icon="mdi-chevron-down" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, 1)" title="Move Down"></v-btn>
               <v-btn icon="mdi-trash-can-outline" variant="text" size="x-small" color="error" class="opacity-60" @click="removeBlock(index)" title="Remove Block"></v-btn>
@@ -329,14 +332,6 @@ const handlePublish = async () => {
                   <div class="image-overlay d-flex align-center justify-center">
                     <v-btn icon="mdi-close" color="white" variant="flat" size="small" class="rounded-pill" @click="removeBlock(index)"></v-btn>
                   </div>
-                </div>
-              </div>
-
-              <!-- Bottom Add Content Bar -->
-              <div class="add-content-bar d-flex align-center justify-center mt-2">
-                <div class="add-buttons-container d-flex align-center ga-2">
-                  <v-btn icon="mdi-plus" variant="text" size="x-small" color="secondary" class="add-btn" @click="addTextBlock(index)" title="Add Text"></v-btn>
-                  <v-btn icon="mdi-camera-plus-outline" variant="text" size="x-small" color="secondary" class="add-btn" @click="addImageBlock(index)" title="Add Image"></v-btn>
                 </div>
               </div>
             </div>
@@ -403,40 +398,6 @@ const handlePublish = async () => {
   right: 10px;
   opacity: 0;
   transition: opacity 0.2s ease;
-}
-
-.add-content-bar {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  height: 32px;
-  margin-bottom: -16px;
-  z-index: 2;
-}
-
-.block-wrapper:hover .add-content-bar {
-  opacity: 0.6;
-}
-
-.add-content-bar:hover {
-  opacity: 1 !important;
-}
-
-.add-buttons-container {
-  background: #FFFFFF;
-  padding: 2px 12px;
-  border-radius: 24px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.add-btn {
-  opacity: 0.7;
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-.add-btn:hover {
-  opacity: 1;
-  transform: scale(1.1);
 }
 
 .tags-input-container {

@@ -24,9 +24,11 @@ const handleLogout = () => {
 <template>
   <v-app>
     <v-app-bar flat class="glass-nav px-4">
-      <v-app-bar-title class="font-weight-black text-h5">
-        <span class="text-primary">IGRIR</span>netlify
-      </v-app-bar-title>
+      <router-link to="/" class="text-decoration-none d-flex align-center">
+        <v-app-bar-title class="font-weight-black text-h5 no-ellipsis">
+          <span class="text-primary">IGRIR</span>netlify
+        </v-app-bar-title>
+      </router-link>
 
       <v-spacer></v-spacer>
 
@@ -77,15 +79,6 @@ const handleLogout = () => {
         </router-view>
       </v-container>
     </v-main>
-
-    <v-footer app class="bg-background text-caption text-medium-emphasis border-t">
-      <v-container class="py-2 d-flex justify-space-between align-center">
-        <div>&copy; 2026 ATOBlog - Decentralized Publishing</div>
-        <div class="d-flex align-center">
-          Powered by <v-icon icon="mdi-butterfly" size="small" class="mx-1"></v-icon> AT Protocol
-        </div>
-      </v-container>
-    </v-footer>
   </v-app>
 </template>
 
@@ -169,5 +162,11 @@ h1, h2, h3, h4, h5, h6 {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.no-ellipsis {
+  overflow: visible !important;
+  white-space: nowrap !important;
+  text-overflow: clip !important;
 }
 </style>

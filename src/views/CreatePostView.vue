@@ -57,6 +57,7 @@ const loadPost = async () => {
         type: b.type,
         value: b.value || '',
         blob: b.blob || null,
+        language: b.language || 'javascript',
         preview: b.type === 'image' ? getExistingImageUrl(post.author.did, b.blob) : ''
       }))
     } else {
@@ -95,6 +96,14 @@ const addTextBlock = (index) => {
   blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'text', value: '' })
 }
 
+const addQuoteBlock = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'quote', value: '' })
+}
+
+const addCodeBlock = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'code', value: '', language: 'javascript' })
+}
+
 const addImageBlock = (index) => {
   const input = document.createElement('input')
   input.type = 'file'
@@ -126,6 +135,21 @@ const moveBlock = (index, direction) => {
   const temp = blocks.value[index]
   blocks.value[index] = blocks.value[newIndex]
   blocks.value[newIndex] = temp
+}
+
+const handleTab = (e, block) => {
+  const el = e.target
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  const value = block.value
+
+  // Use 2 spaces for tab
+  block.value = value.substring(0, start) + '  ' + value.substring(end)
+
+  // Put caret at right position again (next tick)
+  setTimeout(() => {
+    el.selectionStart = el.selectionEnd = start + 2
+  }, 0)
 }
 
 const addTag = (e) => {
@@ -188,6 +212,18 @@ const handlePublish = async () => {
         } else if (block.blob) {
           finalBlocks.push({ type: 'image', blob: block.blob })
         }
+      } else if (block.type === 'quote') {
+        if (block.value.trim()) {
+          finalBlocks.push({ type: 'quote', value: block.value })
+        }
+      } else if (block.type === 'code') {
+        if (block.value.trim()) {
+          finalBlocks.push({ 
+            type: 'code', 
+            value: block.value, 
+            language: block.language || 'javascript' 
+          })
+        }
       }
     }
     
@@ -197,6 +233,7 @@ const handlePublish = async () => {
       return
     }
 
+    let publishedRkey = rkey.value
     if (isEdit.value) {
       // Collect existing URIs
       const { post } = await atproto.getPost(`at://${auth.user.handle}/xyz.atoblog.post/${rkey.value}`)
@@ -214,9 +251,19 @@ const handlePublish = async () => {
         tags.value
       )
     } else {
-      await atproto.createPost(title.value, finalBlocks, tags.value)
+      const response = await atproto.createPost(title.value, finalBlocks, tags.value)
+      // Extract rkey from uri (at://did:plc:xxx/collection/rkey)
+      publishedRkey = response.data.uri.split('/').pop()
     }
-    router.push('/')
+    
+    // Redirect to the post detail page
+    router.push({ 
+      name: 'post-detail', 
+      params: { 
+        repo: auth.user.handle, 
+        rkey: publishedRkey 
+      } 
+    })
   } catch (err) {
     if (err.status === 401 || err.message?.includes('Authentication')) {
       error.value = 'Your session has expired. Please log in again to publish your story.'
@@ -235,7 +282,12 @@ const handlePublish = async () => {
   <v-row justify="center" class="py-12 bg-white min-h-screen">
     <v-col cols="12" md="10" lg="8" class="editor-col" @paste="handlePaste">
       <div class="d-flex align-center mb-12">
-        <v-btn to="/" icon="mdi-close" variant="text" class="mr-4"></v-btn>
+        <v-btn 
+          :to="isEdit ? { name: 'post-detail', params: { repo: auth.user.handle, rkey: rkey } } : '/'" 
+          icon="mdi-close" 
+          variant="text" 
+          class="mr-4"
+        ></v-btn>
         <span class="text-subtitle-1 text-secondary">{{ isEdit ? 'Edit Draft' : 'Draft' }}</span>
         <v-spacer></v-spacer>
         <v-btn
@@ -273,7 +325,7 @@ const handlePublish = async () => {
             <v-chip
               v-for="tag in tags"
               :key="tag"
-              closable
+              :closable="!loading"
               size="small"
               variant="flat"
               color="grey-lighten-4"
@@ -292,6 +344,7 @@ const handlePublish = async () => {
           density="compact"
           hide-details
           class="tag-field"
+          :disabled="loading"
           @keydown.enter.prevent="addTag"
           @keydown.space="addTag"
           @keydown.comma="addTag"
@@ -302,14 +355,11 @@ const handlePublish = async () => {
       <div class="blocks-container">
         <div v-for="(block, index) in blocks" :key="block.id" class="block-wrapper mb-8">
           <div class="d-flex align-start position-relative">
-            <!-- Left Side Controls -->
+            <!-- Left Side Controls (Move/Delete) -->
             <div class="side-controls d-flex flex-column align-center mr-4">
-              <v-btn icon="mdi-plus" variant="text" size="x-small" color="secondary" class="mb-1" @click="addTextBlock(index)" title="Add Text"></v-btn>
-              <v-btn icon="mdi-camera-plus-outline" variant="text" size="x-small" color="secondary" class="mb-1" @click="addImageBlock(index)" title="Add Image"></v-btn>
-              <v-divider class="my-1 w-50"></v-divider>
-              <v-btn v-if="index > 0" icon="mdi-chevron-up" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, -1)" title="Move Up"></v-btn>
-              <v-btn v-if="index < blocks.length - 1" icon="mdi-chevron-down" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, 1)" title="Move Down"></v-btn>
-              <v-btn icon="mdi-trash-can-outline" variant="text" size="x-small" color="error" class="opacity-60" @click="removeBlock(index)" title="Remove Block"></v-btn>
+              <v-btn v-if="index > 0" icon="mdi-chevron-up" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, -1)" title="Move Up" :disabled="loading"></v-btn>
+              <v-btn v-if="index < blocks.length - 1" icon="mdi-chevron-down" variant="text" size="x-small" color="secondary" class="mb-1" @click="moveBlock(index, 1)" title="Move Down" :disabled="loading"></v-btn>
+              <v-btn icon="mdi-trash-can-outline" variant="text" size="x-small" color="error" class="opacity-60" @click="removeBlock(index)" title="Remove Block" :disabled="loading"></v-btn>
             </div>
 
             <div class="flex-grow-1">
@@ -325,13 +375,60 @@ const handlePublish = async () => {
                   :disabled="loading"
                   hide-details
                   @focus="lastFocusedIndex = index"
+                  @keydown.tab.prevent="handleTab($event, block)"
                 ></v-textarea>
+                
+                <v-textarea
+                  v-if="block.type === 'quote'"
+                  v-model="block.value"
+                  placeholder="Enter a quote..."
+                  variant="plain"
+                  auto-grow
+                  rows="1"
+                  class="quote-block-input text-serif"
+                  :disabled="loading"
+                  hide-details
+                  @keydown.tab.prevent="handleTab($event, block)"
+                ></v-textarea>
+
+                <div v-if="block.type === 'code'" class="code-block-editor position-relative">
+                  <v-select
+                    v-model="block.language"
+                    :items="['javascript', 'typescript', 'python', 'html', 'css', 'json', 'bash', 'csharp', 'gdscript']"
+                    density="compact"
+                    variant="plain"
+                    class="code-lang-selector"
+                    :disabled="loading"
+                    hide-details
+                  ></v-select>
+                  <v-textarea
+                    v-model="block.value"
+                    placeholder="Paste your code here..."
+                    variant="plain"
+                    auto-grow
+                    rows="2"
+                    class="code-block-input font-mono"
+                    :disabled="loading"
+                    hide-details
+                    @keydown.tab.prevent="handleTab($event, block)"
+                  ></v-textarea>
+                </div>
                 
                 <div v-if="block.type === 'image' && block.preview" class="image-block-container position-relative mb-2">
                   <v-img :src="block.preview" max-height="800" class="rounded-sm bg-grey-lighten-4 mx-auto"></v-img>
                   <div class="image-overlay d-flex align-center justify-center">
-                    <v-btn icon="mdi-close" color="white" variant="flat" size="small" class="rounded-pill" @click="removeBlock(index)"></v-btn>
+                    <v-btn icon="mdi-close" color="white" variant="flat" size="small" class="rounded-pill" @click="removeBlock(index)" :disabled="loading"></v-btn>
                   </div>
+                </div>
+              </div>
+
+              <!-- Bottom Add Content Bar -->
+              <div class="add-content-bar d-flex align-center justify-center mt-2">
+                <div class="add-buttons-container d-flex align-center ga-2">
+                  <v-btn icon="mdi-plus" variant="text" size="x-small" color="secondary" class="add-btn" @click="addTextBlock(index)" title="Add Text" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-format-quote-close" variant="text" size="x-small" color="secondary" class="add-btn" @click="addQuoteBlock(index)" title="Add Quote" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-code-tags" variant="text" size="x-small" color="secondary" class="add-btn" @click="addCodeBlock(index)" title="Add Code" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-camera-plus-outline" variant="text" size="x-small" color="secondary" class="add-btn" @click="addImageBlock(index)" title="Add Image" :disabled="loading"></v-btn>
                 </div>
               </div>
             </div>
@@ -370,6 +467,56 @@ const handlePublish = async () => {
   color: #B3B3B1 !important;
 }
 
+.quote-block-input :deep(textarea) {
+  font-size: 1.8rem !important;
+  line-height: 1.4 !important;
+  font-weight: 400 !important;
+  font-style: italic !important;
+  color: #242424 !important;
+  border-left: 3px solid #242424 !important;
+  padding-left: 24px !important;
+}
+
+.quote-block-input :deep(textarea)::placeholder {
+  color: #B3B3B1 !important;
+}
+
+.code-block-editor {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.code-lang-selector {
+  width: 120px;
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  z-index: 10;
+}
+
+.code-lang-selector :deep(.v-field__input) {
+  font-size: 0.75rem !important;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #6B6B6B !important;
+  min-height: 32px !important;
+}
+
+.code-block-input :deep(textarea) {
+  font-family: 'Fira Code', 'Roboto Mono', monospace !important;
+  font-size: 0.95rem !important;
+  line-height: 1.5 !important;
+  color: #242424 !important;
+  padding-top: 24px !important;
+}
+
+.code-block-input :deep(textarea)::placeholder {
+  color: #B3B3B1 !important;
+}
+
 .block-wrapper {
   position: relative;
 }
@@ -398,6 +545,45 @@ const handlePublish = async () => {
   right: 10px;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+.add-content-bar {
+  position: relative;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  height: 32px;
+  margin-bottom: -16px;
+  z-index: 100;
+}
+
+.block-wrapper:hover {
+  z-index: 10;
+}
+
+.block-wrapper:hover .add-content-bar {
+  opacity: 0.6;
+}
+
+.add-content-bar:hover {
+  opacity: 1 !important;
+}
+
+.add-buttons-container {
+  background: #FFFFFF;
+  padding: 2px 12px;
+  border-radius: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.add-btn {
+  opacity: 0.7;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.add-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .tags-input-container {

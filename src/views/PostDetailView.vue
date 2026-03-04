@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
 import CommentSection from '../components/CommentSection.vue'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/atom-one-dark.css'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,6 +102,15 @@ const handleThreadCreated = async (uri) => {
     console.error('Failed to update post with BlueSky URI:', error)
   }
 }
+
+const highlightCode = (code, lang) => {
+  if (lang && hljs.getLanguage(lang)) {
+    try {
+      return hljs.highlight(code, { language: lang }).value
+    } catch (__) {}
+  }
+  return hljs.highlightAuto(code).value
+}
 </script>
 
 <template>
@@ -119,7 +130,7 @@ const handleThreadCreated = async (uri) => {
       <header class="story-header mb-12">
         <h1 class="text-h2 font-weight-black mb-10 story-title">{{ post.record.title }}</h1>
         
-        <div class="d-flex align-center mb-8 pb-8 border-b">
+        <div class="d-flex align-center mb-16 pb-8 border-b">
           <div class="flex-grow-1">
             <div class="text-caption text-secondary">
               {{ formatDate(post.indexedAt) }} · 8 min read
@@ -139,12 +150,21 @@ const handleThreadCreated = async (uri) => {
         </div>
       </header>
 
-      <div class="story-body text-serif">
+      <div class="story-body text-serif pt-6">
         <template v-if="post.record.blocks">
           <div v-for="(block, index) in post.record.blocks" :key="index" class="mb-10 block-item">
             <p v-if="block.type === 'text'" class="story-paragraph">
               {{ block.value }}
             </p>
+            <blockquote v-else-if="block.type === 'quote'" class="story-quote">
+              <p>{{ block.value }}</p>
+            </blockquote>
+
+            <div v-else-if="block.type === 'code'" class="story-code-block mb-10">
+              <div v-if="block.language" class="code-lang-badge">{{ block.language }}</div>
+              <pre><code :class="['hljs', 'language-' + (block.language || 'plaintext')]" v-html="highlightCode(block.value, block.language)"></code></pre>
+            </div>
+
             <v-img
               v-else-if="block.type === 'image'"
               :src="getBlockImageUrl(block.blob)"
@@ -172,7 +192,7 @@ const handleThreadCreated = async (uri) => {
       </div>
 
       <!-- Post Tags -->
-      <div v-if="post.record.tags && post.record.tags.length > 0" class="mt-12 d-flex flex-wrap ga-3">
+      <div v-if="post.record.tags && post.record.tags.length > 0" class="mt-12 d-flex flex-wrap ga-3 pb-5">
         <v-chip
           v-for="tag in post.record.tags"
           :key="tag"
@@ -198,7 +218,7 @@ const handleThreadCreated = async (uri) => {
         @thread-created="handleThreadCreated"
       />
 
-      <footer class="story-footer mt-16 pt-12 border-t">
+      <footer class="story-footer mt-16 pt-12 pb-8 border-t">
         <!-- Footer cleaned -->
       </footer>
     </article>
@@ -233,12 +253,14 @@ const handleThreadCreated = async (uri) => {
 }
 
 .story-paragraph {
-  font-size: 1.3rem;
-  line-height: 1.6;
+  font-family: var(--medium-font-serif, source-serif-pro, Georgia, Cambria, "Times New Roman", Times, serif);
+  font-size: 1.25rem;
+  line-height: 1.62;
   color: #242424;
   margin-bottom: 2rem;
   white-space: pre-wrap;
   word-break: break-word;
+  letter-spacing: -0.003em;
 }
 
 .back-button-floating {
@@ -257,7 +279,65 @@ const handleThreadCreated = async (uri) => {
 }
 
 .story-image {
+  display: block;
   max-width: 100%;
+  height: auto;
+  border-radius: 2px;
+  margin: 3.5rem auto; /* More generous spacing around images */
+}
+
+.story-quote {
+  border-left: 3px solid #242424;
+  padding-left: 2rem;
+  margin-bottom: 2.5rem;
+  margin-top: 1rem;
+}
+
+.story-quote p {
+  font-size: 1.8rem;
+  line-height: 1.4;
+  font-weight: 400;
+  font-style: italic;
+  color: #242424;
+}
+
+.story-code-block {
+  position: relative;
+  background: #282c34; /* Atom One Dark default background */
+  border-radius: 8px;
+  margin-bottom: 2.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.story-code-block pre {
+  margin: 0;
+  padding: 1.5rem;
+  overflow-x: auto;
+}
+
+.story-code-block code {
+  font-family: 'Fira Code', 'Roboto Mono', monospace !important;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #abb2bf !important; /* Force readable base color */
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.code-lang-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px 12px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-bottom-left-radius: 8px;
+  z-index: 1;
 }
 
 .border-b {

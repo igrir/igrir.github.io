@@ -78,8 +78,8 @@ const constructUrl = (actor, blob) => {
 const getSnippet = (item) => {
   const { record } = item.post
   if (record.blocks) {
-    const firstTextBlock = record.blocks.find(b => b.type === 'text')
-    if (firstTextBlock) return firstTextBlock.value
+    const contentBlock = record.blocks.find(b => ['text', 'quote', 'code'].includes(b.type))
+    if (contentBlock) return contentBlock.value
   }
   return record.text || ''
 }
@@ -87,7 +87,7 @@ const getSnippet = (item) => {
 
 <template>
   <div class="feed-container py-12">
-    <header class="blog-header mb-24 text-center border-b pb-16">
+    <header class="blog-header mb-32 text-center pb-16 border-b">
       <div v-if="!loading">
         <h1 class="text-h1 font-weight-black mb-6 blog-title">{{ settings.title }}</h1>
         <p class="text-h5 text-secondary font-weight-medium blog-description max-w-2xl mx-auto">
@@ -108,7 +108,7 @@ const getSnippet = (item) => {
       <v-progress-circular indeterminate color="primary" size="48" width="3"></v-progress-circular>
     </div>
 
-    <div v-else-if="filteredPosts.length > 0" class="posts-list">
+    <div v-else-if="filteredPosts.length > 0" class="posts-list pt-10">
       <article v-for="item in filteredPosts" :key="item.post.cid" class="post-item mb-12">
         <v-row no-gutters align="center">
           <v-col class="pr-8">
@@ -207,5 +207,9 @@ const getSnippet = (item) => {
 .post-item:not(:last-child) {
   padding-bottom: 48px;
   border-bottom: 1px solid #F2F2F2;
+}
+
+.post-item:not(:first-child) {
+  padding-top: 48px;
 }
 </style>

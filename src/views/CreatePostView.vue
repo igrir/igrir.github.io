@@ -19,6 +19,7 @@ const rkey = ref('')
 const originalCreatedAt = ref('')
 const tags = ref([])
 const tagInput = ref('')
+const isDraft = ref(false)
 
 const loadPost = async () => {
   const queryRkey = route.query.rkey
@@ -30,6 +31,7 @@ const loadPost = async () => {
     title.value = ''
     tags.value = []
     tagInput.value = ''
+    isDraft.value = false
     blocks.value = [
       { id: Date.now(), type: 'text', value: '' }
     ]
@@ -50,6 +52,7 @@ const loadPost = async () => {
     title.value = post.record.title
     originalCreatedAt.value = post.record.createdAt
     tags.value = post.record.tags || []
+    isDraft.value = !!post.record.isDraft
     
     if (post.record.blocks) {
       blocks.value = post.record.blocks.map((b, index) => ({
@@ -152,6 +155,80 @@ const handleTab = (e, block) => {
   }, 0)
 }
 
+const wrapText = (e, block, wrapStr) => {
+  const el = e.target
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  const value = block.value
+  
+  if (start !== end) {
+    const selectedText = value.substring(start, end)
+    block.value = value.substring(0, start) + wrapStr + selectedText + wrapStr + value.substring(end)
+    setTimeout(() => {
+      el.selectionStart = start + wrapStr.length
+      el.selectionEnd = end + wrapStr.length
+      el.focus()
+    }, 0)
+  } else {
+    block.value = value.substring(0, start) + wrapStr + wrapStr + value.substring(end)
+    setTimeout(() => {
+      el.selectionStart = start + wrapStr.length
+      el.selectionEnd = start + wrapStr.length
+      el.focus()
+    }, 0)
+  }
+}
+
+const applyFormat = (e, block, wrapStr, index) => {
+  const wrappers = document.querySelectorAll('.block-wrapper')
+  if (wrappers[index]) {
+    const el = wrappers[index].querySelector('textarea')
+    if (el) {
+      const start = el.selectionStart
+      const end = el.selectionEnd
+      const value = block.value
+      
+      if (start !== end) {
+        const selectedText = value.substring(start, end)
+        block.value = value.substring(0, start) + wrapStr + selectedText + wrapStr + value.substring(end)
+        setTimeout(() => {
+          el.selectionStart = start + wrapStr.length
+          el.selectionEnd = end + wrapStr.length
+          el.focus()
+        }, 0)
+      } else {
+        block.value = value.substring(0, start) + wrapStr + wrapStr + value.substring(end)
+        setTimeout(() => {
+          el.selectionStart = start + wrapStr.length
+          el.selectionEnd = start + wrapStr.length
+          el.focus()
+        }, 0)
+      }
+    }
+  }
+}
+
+const applyPrefixFormat = (e, block, prefixStr, index) => {
+  const wrappers = document.querySelectorAll('.block-wrapper')
+  if (wrappers[index]) {
+    const el = wrappers[index].querySelector('textarea')
+    if (el) {
+      const start = el.selectionStart
+      const end = el.selectionEnd
+      const value = block.value
+      
+      const lineStart = value.lastIndexOf('\n', start - 1) + 1
+      
+      block.value = value.substring(0, lineStart) + prefixStr + value.substring(lineStart)
+      setTimeout(() => {
+        el.selectionStart = start + prefixStr.length
+        el.selectionEnd = end + prefixStr.length
+        el.focus()
+      }, 0)
+    }
+  }
+}
+
 const addTag = (e) => {
   if (e && (e.key === ' ' || e.key === ',')) {
     e.preventDefault()
@@ -167,7 +244,110 @@ const removeTag = (tag) => {
   tags.value = tags.value.filter(t => t !== tag)
 }
 
-const lastFocusedIndex = ref(0)
+const lastFocusedIndex = ref(0) // keep this for paste handling
+
+const formatToolbar = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  blockIndex: -1,
+  showLinkInput: false,
+  linkUrl: ''
+})
+
+const checkSelection = (e, index) => {
+  const el = e.target
+  setTimeout(() => {
+    if (el && el.selectionStart !== el.selectionEnd) {
+      const rect = el.getBoundingClientRect()
+      let top = rect.top - 45
+      let left = rect.left + (rect.width / 2) - 80
+      
+      if (e.type === 'mouseup') {
+        top = e.clientY - 55
+        left = e.clientX - 80
+      }
+      
+      if (!formatToolbar.value.visible || formatToolbar.value.blockIndex !== index || !formatToolbar.value.showLinkInput) {
+        formatToolbar.value = {
+          visible: true,
+          top,
+          left,
+          blockIndex: index,
+          showLinkInput: false,
+          linkUrl: ''
+        }
+      }
+    } else {
+      setTimeout(() => {
+        if (!formatToolbar.value.showLinkInput) {
+          formatToolbar.value.visible = false
+        }
+      }, 150)
+    }
+  }, 10)
+}
+
+const handleToolbarFormat = (wrapStr) => {
+  const index = formatToolbar.value.blockIndex
+  if (index >= 0 && blocks.value[index]) {
+    applyFormat(null, blocks.value[index], wrapStr, index)
+    formatToolbar.value.visible = false
+  }
+}
+
+const handleToolbarPrefix = (prefixStr) => {
+  const index = formatToolbar.value.blockIndex
+  if (index >= 0 && blocks.value[index]) {
+    applyPrefixFormat(null, blocks.value[index], prefixStr, index)
+    formatToolbar.value.visible = false
+  }
+}
+
+const handleToolbarLink = () => {
+  formatToolbar.value.showLinkInput = true
+  formatToolbar.value.linkUrl = ''
+  setTimeout(() => {
+    const input = document.getElementById('toolbar-link-input')
+    if (input) input.focus()
+  }, 50)
+}
+
+const applyLink = () => {
+  const index = formatToolbar.value.blockIndex
+  const url = formatToolbar.value.linkUrl || 'https://'
+  if (index >= 0 && blocks.value[index]) {
+    const wrappers = document.querySelectorAll('.block-wrapper')
+    if (wrappers[index]) {
+      const el = wrappers[index].querySelector('textarea')
+      if (el) {
+        const start = el.selectionStart
+        const end = el.selectionEnd
+        const value = blocks.value[index].value
+        
+        if (start !== end) {
+          const selectedText = value.substring(start, end)
+          blocks.value[index].value = value.substring(0, start) + `[${selectedText}](${url})` + value.substring(end)
+          setTimeout(() => {
+            const newPos = start + selectedText.length + url.length + 4
+            el.selectionStart = newPos
+            el.selectionEnd = newPos
+            el.focus()
+          }, 0)
+        } else {
+          blocks.value[index].value = value.substring(0, start) + `[text](${url})` + value.substring(end)
+          setTimeout(() => {
+            el.selectionStart = start + 1
+            el.selectionEnd = start + 5
+            el.focus()
+          }, 0)
+        }
+      }
+    }
+  }
+  formatToolbar.value.visible = false
+  formatToolbar.value.showLinkInput = false
+}
 
 const handlePaste = (e) => {
   const items = (e.clipboardData || e.originalEvent.clipboardData).items
@@ -188,7 +368,7 @@ const handlePaste = (e) => {
   }
 }
 
-const handlePublish = async () => {
+const handlePublish = async (saveAsDraft = false) => {
   if (!title.value.trim()) {
     error.value = 'Please enter a title.'
     return
@@ -248,10 +428,11 @@ const handlePublish = async () => {
         finalBlocks,
         originalCreatedAt.value,
         uris,
-        tags.value
+        tags.value,
+        saveAsDraft
       )
     } else {
-      const response = await atproto.createPost(title.value, finalBlocks, tags.value)
+      const response = await atproto.createPost(title.value, finalBlocks, tags.value, saveAsDraft)
       // Extract rkey from uri (at://did:plc:xxx/collection/rkey)
       publishedRkey = response.data.uri.split('/').pop()
     }
@@ -280,23 +461,57 @@ const handlePublish = async () => {
 
 <template>
   <v-row justify="center" class="py-12 bg-white min-h-screen">
+    <div v-if="formatToolbar.visible" class="format-toolbar-floating" :style="{ top: formatToolbar.top + 'px', left: formatToolbar.left + 'px' }" @mousedown.stop>
+      <template v-if="!formatToolbar.showLinkInput">
+        <v-btn icon="mdi-format-bold" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarFormat('**')" title="Bold (Ctrl+B)"></v-btn>
+        <v-btn icon="mdi-format-italic" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarFormat('*')" title="Italic (Ctrl+I)"></v-btn>
+        <v-btn icon="mdi-format-underline" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarFormat('__')" title="Underline (Ctrl+U)"></v-btn>
+        <v-btn icon="mdi-format-strikethrough" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarFormat('~~')" title="Strikethrough"></v-btn>
+        <v-btn icon="mdi-format-quote-open" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarPrefix('> ')" title="Blockquote"></v-btn>
+        <div class="mx-1 my-auto" style="height: 16px; width: 1px; background-color: rgba(255,255,255,0.2);"></div>
+        <v-btn icon="mdi-link" variant="text" size="small" color="white" @mousedown.prevent="handleToolbarLink" title="Add Link"></v-btn>
+      </template>
+      <template v-else>
+        <div class="d-flex align-center px-2 py-1" style="min-width: 250px;">
+          <input 
+            id="toolbar-link-input"
+            v-model="formatToolbar.linkUrl" 
+            type="text" 
+            class="link-input w-100 mr-2" 
+            placeholder="Paste or type a link..."
+            @keydown.enter.prevent="applyLink"
+            @keydown.esc.prevent="formatToolbar.showLinkInput = false"
+          />
+          <v-btn icon="mdi-close" variant="text" size="x-small" color="white" class="opacity-70" @mousedown.prevent="formatToolbar.showLinkInput = false"></v-btn>
+        </div>
+      </template>
+    </div>
     <v-col cols="12" md="10" lg="8" class="editor-col" @paste="handlePaste">
-      <div class="d-flex align-center mb-12">
+      <div class="d-flex align-center mb-12" style="gap: 16px;">
         <v-btn 
-          :to="isEdit ? { name: 'post-detail', params: { repo: auth.user.handle, rkey: rkey } } : '/'" 
+          :to="isEdit ? { name: 'post-detail', params: { repo: auth.user?.handle, rkey: rkey } } : '/'" 
           icon="mdi-close" 
           variant="text" 
-          class="mr-4"
         ></v-btn>
-        <span class="text-subtitle-1 text-secondary">{{ isEdit ? 'Edit Draft' : 'Draft' }}</span>
+        <span class="text-subtitle-1 text-secondary mb-0">{{ isEdit ? 'Edit Draft' : 'Draft' }}</span>
         <v-spacer></v-spacer>
+        <v-btn
+          color="secondary"
+          variant="outlined"
+          class="rounded-pill px-5"
+          :loading="loading"
+          :disabled="!title.trim() || loading"
+          @click="handlePublish(true)"
+        >
+          Save Draft
+        </v-btn>
         <v-btn
           color="success"
           flat
           class="rounded-pill px-6 font-weight-bold"
           :loading="loading"
           :disabled="!title.trim() || loading"
-          @click="handlePublish"
+          @click="handlePublish(false)"
         >
           Publish
         </v-btn>
@@ -375,7 +590,16 @@ const handlePublish = async () => {
                   :disabled="loading"
                   hide-details
                   @focus="lastFocusedIndex = index"
+                  @mouseup="checkSelection($event, index)"
+                  @keyup="checkSelection($event, index)"
+                  @blur="formatToolbar.showLinkInput ? null : (formatToolbar.visible = false)"
                   @keydown.tab.prevent="handleTab($event, block)"
+                  @keydown.meta.b.prevent="wrapText($event, block, '**')"
+                  @keydown.ctrl.b.prevent="wrapText($event, block, '**')"
+                  @keydown.meta.i.prevent="wrapText($event, block, '*')"
+                  @keydown.ctrl.i.prevent="wrapText($event, block, '*')"
+                  @keydown.meta.u.prevent="wrapText($event, block, '__')"
+                  @keydown.ctrl.u.prevent="wrapText($event, block, '__')"
                 ></v-textarea>
                 
                 <v-textarea
@@ -608,5 +832,48 @@ const handlePublish = async () => {
 
 .min-height-screen {
   min-height: 100vh;
+}
+
+.block-content-area {
+  position: relative;
+}
+
+.format-toolbar-floating {
+  position: fixed;
+  background: #242424;
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 1000;
+  transform: translateY(-5px);
+  animation: fadeUp 0.15s ease-out forwards;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(0); }
+  to { opacity: 1; transform: translateY(-5px); }
+}
+
+.format-toolbar-floating .v-btn {
+  opacity: 0.8;
+}
+
+.format-toolbar-floating .v-btn:hover {
+  opacity: 1;
+}
+
+.link-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+}
+
+.link-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
 </style>

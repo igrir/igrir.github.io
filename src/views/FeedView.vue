@@ -37,7 +37,9 @@ const fetchPosts = async () => {
       atproto.getSettings(actor)
     ])
     
-    posts.value = blogPosts
+    const isOwner = auth.user && (auth.user.handle === actor || auth.user.did === actor)
+    
+    posts.value = blogPosts.filter(p => !p.post.record.isDraft || isOwner)
     settings.value = blogSettings
   } catch (error) {
     console.error('Failed to fetch posts or settings:', error)
@@ -76,12 +78,21 @@ const constructUrl = (actor, blob) => {
 }
 
 const getSnippet = (item) => {
+  let text = ''
   const { record } = item.post
   if (record.blocks) {
     const contentBlock = record.blocks.find(b => ['text', 'quote', 'code'].includes(b.type))
-    if (contentBlock) return contentBlock.value
+    if (contentBlock) text = contentBlock.value
+  } else {
+    text = record.text || ''
   }
-  return record.text || ''
+  return text
+    .replace(/^> (.*$)/gim, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([\s\S]*?)\*\*/g, '$1')
+    .replace(/\_\_([\s\S]*?)\_\_/g, '$1')
+    .replace(/~~([\s\S]*?)~~/g, '$1')
+    .replace(/\*([\s\S]*?)\*/g, '$1')
 }
 </script>
 
@@ -120,7 +131,10 @@ const getSnippet = (item) => {
               :to="{ name: 'post-detail', params: { repo: item.post.author.handle, rkey: item.post.uri.split('/').pop() } }"
               class="text-decoration-none"
             >
-              <h3 class="text-h5 font-weight-black mb-2 post-title">{{ item.post.record.title || 'Untitled Story' }}</h3>
+              <h3 class="text-h5 font-weight-black mb-2 post-title">
+                {{ item.post.record.title || 'Untitled Story' }}
+                <v-chip v-if="item.post.record.isDraft" size="x-small" color="warning" variant="flat" class="ml-2 font-weight-bold" style="letter-spacing: 0.15em;">DRAFT</v-chip>
+              </h3>
               <p class="text-body-1 text-secondary line-clamp-2 mb-4 post-snippet">
                 {{ getSnippet(item) }}
               </p>

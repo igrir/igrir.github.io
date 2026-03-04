@@ -29,8 +29,14 @@ const fetchPost = async () => {
   try {
     const data = await atproto.getPost(uri)
     post.value = data.post
+    
+    if (post.value.record.isDraft && !isOwner.value) {
+      router.push('/')
+      return
+    }
   } catch (error) {
     console.error(error)
+    router.push('/')
   } finally {
     loading.value = false
   }
@@ -111,6 +117,19 @@ const highlightCode = (code, lang) => {
   }
   return hljs.highlightAuto(code).value
 }
+
+const formatText = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/^&gt; (.*$)/gim, '<blockquote>$1</blockquote>')
+    .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\_\_([\s\S]*?)\_\_/g, '<u>$1</u>')
+    .replace(/~~([\s\S]*?)~~/g, '<s>$1</s>')
+    .replace(/\*([\s\S]*?)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="story-link">$1</a>')
+}
 </script>
 
 <template>
@@ -128,7 +147,10 @@ const highlightCode = (code, lang) => {
 
     <article v-else-if="post" class="story-article">
       <header class="story-header mb-12">
-        <h1 class="text-h2 font-weight-black mb-10 story-title">{{ post.record.title }}</h1>
+        <h1 class="text-h2 font-weight-black mb-10 story-title">
+          {{ post.record.title }}
+          <v-chip v-if="post.record.isDraft" size="small" color="warning" variant="flat" class="ml-4 mb-2 font-weight-bold" style="vertical-align: middle; letter-spacing: 0.15em;">DRAFT</v-chip>
+        </h1>
         
         <div class="d-flex align-center mb-16 pb-8 border-b">
           <div class="flex-grow-1">
@@ -153,9 +175,7 @@ const highlightCode = (code, lang) => {
       <div class="story-body text-serif pt-6">
         <template v-if="post.record.blocks">
           <div v-for="(block, index) in post.record.blocks" :key="index" class="mb-10 block-item">
-            <p v-if="block.type === 'text'" class="story-paragraph">
-              {{ block.value }}
-            </p>
+            <p v-if="block.type === 'text'" class="story-paragraph" v-html="formatText(block.value)"></p>
             <blockquote v-else-if="block.type === 'quote'" class="story-quote">
               <p>{{ block.value }}</p>
             </blockquote>
@@ -261,6 +281,42 @@ const highlightCode = (code, lang) => {
   white-space: pre-wrap;
   word-break: break-word;
   letter-spacing: -0.003em;
+}
+
+.story-paragraph :deep(strong) {
+  font-weight: 700;
+}
+
+.story-paragraph :deep(em) {
+  font-style: italic;
+}
+
+.story-paragraph :deep(u) {
+  text-decoration: underline;
+}
+
+.story-paragraph :deep(s) {
+  text-decoration: line-through;
+}
+
+.story-paragraph :deep(blockquote) {
+  border-left: 3px solid #242424;
+  padding-left: 1.5rem;
+  margin: 1rem 0;
+  font-style: italic;
+  color: #242424;
+}
+
+.story-paragraph :deep(.story-link) {
+  color: #242424;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: opacity 0.2s ease;
+}
+
+.story-paragraph :deep(.story-link:hover) {
+  opacity: 0.7;
 }
 
 .back-button-floating {

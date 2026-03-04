@@ -41,7 +41,7 @@ class AtprotoService {
             }
 
             const response = await this.agent.api.com.atproto.repo.putRecord({
-                repo: this.agent.session.did,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: SETTINGS_COLLECTION,
                 rkey: 'self',
                 record: record
@@ -195,7 +195,7 @@ class AtprotoService {
         }
     }
 
-    async createPost(title, blocks, tags = []) {
+    async createPost(title, blocks, tags = [], isDraft = false) {
         try {
             const record = {
                 $type: BLOG_COLLECTION,
@@ -203,10 +203,11 @@ class AtprotoService {
                 blocks: blocks,
                 tags: Array.isArray(tags) ? tags : [],
                 createdAt: new Date().toISOString(),
+                isDraft: isDraft
             }
 
             const response = await this.agent.api.com.atproto.repo.createRecord({
-                repo: this.agent.session.did,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 record: record
             })
@@ -218,7 +219,7 @@ class AtprotoService {
         }
     }
 
-    async updatePost(rkey, title, blocks, createdAt, blueskyUris = [], tags = []) {
+    async updatePost(rkey, title, blocks, createdAt, blueskyUris = [], tags = [], isDraft = false) {
         try {
             // Ensure blueskyUris is always an array
             const uris = Array.isArray(blueskyUris) ? blueskyUris : (blueskyUris ? [blueskyUris] : [])
@@ -230,11 +231,12 @@ class AtprotoService {
                 tags: Array.isArray(tags) ? tags : [],
                 createdAt: createdAt || new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-                blueskyUris: uris
+                blueskyUris: uris,
+                isDraft: isDraft
             }
 
             const response = await this.agent.api.com.atproto.repo.putRecord({
-                repo: this.agent.session.did,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 rkey: rkey,
                 record: record
@@ -357,7 +359,7 @@ class AtprotoService {
     async deletePost(rkey) {
         try {
             const response = await this.agent.api.com.atproto.repo.deleteRecord({
-                repo: this.agent.session.did,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 rkey: rkey
             })

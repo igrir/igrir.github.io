@@ -195,12 +195,13 @@ class AtprotoService {
         }
     }
 
-    async createPost(title, blocks) {
+    async createPost(title, blocks, tags = []) {
         try {
             const record = {
                 $type: BLOG_COLLECTION,
                 title: title,
                 blocks: blocks,
+                tags: Array.isArray(tags) ? tags : [],
                 createdAt: new Date().toISOString(),
             }
 
@@ -217,15 +218,19 @@ class AtprotoService {
         }
     }
 
-    async updatePost(rkey, title, blocks, createdAt, blueskyUri = null) {
+    async updatePost(rkey, title, blocks, createdAt, blueskyUris = [], tags = []) {
         try {
+            // Ensure blueskyUris is always an array
+            const uris = Array.isArray(blueskyUris) ? blueskyUris : (blueskyUris ? [blueskyUris] : [])
+
             const record = {
                 $type: BLOG_COLLECTION,
                 title: title,
                 blocks: blocks,
+                tags: Array.isArray(tags) ? tags : [],
                 createdAt: createdAt || new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-                blueskyUri: blueskyUri
+                blueskyUris: uris
             }
 
             const response = await this.agent.api.com.atproto.repo.putRecord({

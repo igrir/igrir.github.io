@@ -1,16 +1,29 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const posts = ref([])
-const loading = ref(true)
+const loading = ref(false)
+const filterTag = ref(route.query.tag || '')
 const settings = ref({
   title: 'Reflections on Decentralization',
   description: 'Stories and insights from the AT Protocol'
+})
+
+watch(() => route.query.tag, (newTag) => {
+  filterTag.value = newTag || ''
+})
+
+const filteredPosts = computed(() => {
+  if (!filterTag.value) return posts.value
+  return posts.value.filter(p => 
+    p.post.record.tags && p.post.record.tags.includes(filterTag.value)
+  )
 })
 
 const fetchPosts = async () => {
@@ -74,17 +87,29 @@ const getSnippet = (item) => {
 
 <template>
   <div class="feed-container py-12">
-    <header class="mb-12 border-b pb-8">
-      <h1 class="text-h2 font-weight-black mb-2 hero-title">{{ settings.title }}</h1>
-      <p class="text-h6 text-secondary">{{ settings.description }}</p>
+    <header class="blog-header mb-24 text-center border-b pb-16">
+      <div v-if="!loading">
+        <h1 class="text-h1 font-weight-black mb-6 blog-title">{{ settings.title }}</h1>
+        <p class="text-h5 text-secondary font-weight-medium blog-description max-w-2xl mx-auto">
+          {{ settings.description }}
+        </p>
+      </div>
+      <div v-else class="py-12">
+        <v-progress-circular indeterminate color="primary" size="48" width="3"></v-progress-circular>
+      </div>
     </header>
+    
+    <div v-if="filterTag" class="filter-header mb-12 d-flex align-center">
+      <span class="text-h6 text-secondary">Showing stories tagged: <span class="text-primary font-weight-black">{{ filterTag }}</span></span>
+      <v-btn icon="mdi-close" variant="text" size="small" class="ml-2" @click="filterTag = ''"></v-btn>
+    </div>
 
-    <div v-if="loading" class="d-flex justify-center py-12">
+    <div v-if="loading" class="d-flex justify-center py-16">
       <v-progress-circular indeterminate color="primary" size="48" width="3"></v-progress-circular>
     </div>
 
-    <div v-else-if="posts.length > 0" class="posts-list">
-      <article v-for="item in posts" :key="item.post.cid" class="post-item mb-12">
+    <div v-else-if="filteredPosts.length > 0" class="posts-list">
+      <article v-for="item in filteredPosts" :key="item.post.cid" class="post-item mb-12">
         <v-row no-gutters align="center">
           <v-col class="pr-8">
             <div class="d-flex align-center mb-3">
@@ -101,8 +126,21 @@ const getSnippet = (item) => {
               </p>
             </router-link>
 
-            <div class="d-flex align-center">
-              <span class="text-caption text-secondary">5 min read</span>
+            <div class="d-flex align-center flex-wrap ga-3 mt-4">
+              <v-chip
+                v-for="tag in item.post.record.tags"
+                :key="tag"
+                size="x-small"
+                variant="flat"
+                color="grey-lighten-4"
+                class="px-2 tag-chip text-secondary text-uppercase font-weight-bold"
+                style="letter-spacing: 0.05em; font-size: 0.65rem;"
+                @click.stop="filterTag = tag"
+              >
+                {{ tag }}
+              </v-chip>
+              <span v-if="item.post.record.tags?.length > 0" class="text-caption text-secondary opacity-30">|</span>
+              <span class="text-caption text-secondary font-weight-medium">5 min read</span>
             </div>
           </v-col>
 

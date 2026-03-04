@@ -25,7 +25,7 @@ const handleLogout = () => {
   <v-app>
     <v-app-bar flat class="glass-nav px-4">
       <v-app-bar-title class="font-weight-black text-h5">
-        <span class="text-primary">ATO</span>BLOG
+        <span class="text-primary">IGRIR</span>netlify
       </v-app-bar-title>
 
       <v-spacer></v-spacer>
@@ -150,13 +150,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .glass-nav {
-  background: rgba(15, 23, 42, 0.7) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-  position: sticky !important;
-  top: 0;
-  z-index: 1000;
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  color: #242424 !important;
 }
 
 .fade-enter-active,

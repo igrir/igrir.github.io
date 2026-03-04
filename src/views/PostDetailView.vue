@@ -75,14 +75,27 @@ const handleDelete = async () => {
 const handleThreadCreated = async (uri) => {
   const rkey = route.params.rkey
   try {
+    // Collect existing URIs, including legacy single ones
+    const currentUris = [...(post.value.record.blueskyUris || [])]
+    if (post.value.record.blueskyUri && !currentUris.includes(post.value.record.blueskyUri)) {
+      currentUris.push(post.value.record.blueskyUri)
+    }
+    
+    // Add new one
+    if (!currentUris.includes(uri)) {
+      currentUris.push(uri)
+    }
+
     await atproto.updatePost(
       rkey,
       post.value.record.title,
       post.value.record.blocks,
       post.value.record.createdAt,
-      uri
+      currentUris
     )
-    post.value.record.blueskyUri = uri
+    post.value.record.blueskyUris = currentUris
+    // Remove legacy single URI to keep record clean
+    delete post.value.record.blueskyUri
   } catch (error) {
     console.error('Failed to update post with BlueSky URI:', error)
   }
@@ -90,8 +103,13 @@ const handleThreadCreated = async (uri) => {
 </script>
 
 <template>
-  <div class="story-detail-view py-12">
-    <v-btn to="/" icon="mdi-chevron-left" variant="text" class="mb-8 ml-n4"></v-btn>
+  <div class="story-detail-view py-12 position-relative">
+    <v-btn 
+      to="/" 
+      icon="mdi-chevron-left" 
+      variant="text" 
+      class="back-button-floating"
+    ></v-btn>
 
     <div v-if="loading" class="d-flex justify-center py-12">
       <v-progress-circular indeterminate color="primary" size="48" width="3"></v-progress-circular>
@@ -153,9 +171,26 @@ const handleThreadCreated = async (uri) => {
         </template>
       </div>
 
+      <!-- Post Tags -->
+      <div v-if="post.record.tags && post.record.tags.length > 0" class="mt-12 d-flex flex-wrap ga-3">
+        <v-chip
+          v-for="tag in post.record.tags"
+          :key="tag"
+          size="small"
+          variant="flat"
+          color="grey-lighten-4"
+          class="px-3 text-secondary text-uppercase font-weight-bold"
+          style="letter-spacing: 0.05em; font-size: 0.7rem;"
+          @click="router.push({ name: 'feed', query: { tag } })"
+        >
+          {{ tag }}
+        </v-chip>
+      </div>
+
       <!-- BlueSky Comments Section -->
       <CommentSection 
         :blueskyUri="post.record.blueskyUri"
+        :blueskyUris="post.record.blueskyUris"
         :postTitle="post.record.title"
         :postUrl="postUrl"
         :isOwner="isOwner"
@@ -204,6 +239,21 @@ const handleThreadCreated = async (uri) => {
   margin-bottom: 2rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.back-button-floating {
+  position: absolute;
+  left: -80px;
+  top: 48px;
+  color: #757575 !important;
+}
+
+@media (max-width: 1024px) {
+  .back-button-floating {
+    position: static;
+    margin-bottom: 2rem;
+    margin-left: -0.5rem;
+  }
 }
 
 .story-image {

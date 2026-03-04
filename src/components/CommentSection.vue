@@ -4,7 +4,8 @@ import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
 
 const props = defineProps({
-  blueskyUri: String,
+  blueskyUri: String,    // Support legacy
+  blueskyUris: Array,    // New multi-thread support
   postTitle: String,
   postUrl: String,
   isOwner: Boolean,
@@ -14,26 +15,58 @@ const props = defineProps({
 const emit = defineEmits(['thread-created'])
 
 const auth = useAuthStore()
-const thread = ref(null)
+const threads = ref([])
+const replies = ref([])
 const loading = ref(false)
 const posting = ref(false)
 const commentText = ref('')
 const error = ref('')
 
-const fetchThread = async () => {
-  if (!props.blueskyUri) return
+const fetchThreads = async () => {
+  const uris = [...(props.blueskyUris || [])]
+  if (props.blueskyUri && !uris.includes(props.blueskyUri)) {
+    uris.push(props.blueskyUri)
+  }
+  
+  if (uris.length === 0) return
+  
   loading.value = true
   try {
-    thread.value = await atproto.getPostThread(props.blueskyUri)
+    const threadResults = await Promise.all(
+      uris.map(uri => atproto.getPostThread(uri).catch(err => {
+        console.warn(`Failed to fetch thread for ${uri}:`, err)
+        return null
+      }))
+    )
+    
+    threads.value = threadResults.filter(t => t !== null)
+    
+    // Aggregating all replies from all threads
+    const allReplies = []
+    threads.value.forEach(t => {
+      if (t.replies) {
+        allReplies.push(...t.replies)
+      }
+    })
+    
+    // De-duplicate (in case overlapping threads) and sort
+    const uniqueRepliesMap = new Map()
+    allReplies.forEach(r => {
+      uniqueRepliesMap.set(r.post.uri, r)
+    })
+    
+    replies.value = Array.from(uniqueRepliesMap.values()).sort((a, b) => {
+      return new Date(b.post.indexedAt) - new Date(a.post.indexedAt)
+    })
   } catch (err) {
-    console.error('Failed to fetch thread:', err)
+    console.error('Failed to fetch threads:', err)
   } finally {
     loading.value = false
   }
 }
 
-onMounted(fetchThread)
-watch(() => props.blueskyUri, fetchThread)
+onMounted(fetchThreads)
+watch([() => props.blueskyUri, () => props.blueskyUris], fetchThreads, { deep: true })
 
 const handlePostThread = async () => {
   posting.value = true
@@ -59,7 +92,7 @@ const handleLike = async (post) => {
     } else {
       await atproto.like(post.uri, post.cid)
     }
-    await fetchThread()
+    await fetchThreads()
   } catch (err) {
     error.value = 'Failed to update like: ' + err.message
   }
@@ -73,24 +106,25 @@ const handleRepost = async (post) => {
     } else {
       await atproto.repost(post.uri, post.cid)
     }
-    await fetchThread()
+    await fetchThreads()
   } catch (err) {
     error.value = 'Failed to update repost: ' + err.message
   }
 }
 
 const handlePostComment = async () => {
-  if (!commentText.value.trim() || !thread.value) return
+  if (!commentText.value.trim() || threads.value.length === 0) return
   posting.value = true
   try {
+    const primaryThread = threads.value[0]
     await atproto.replyToBluesky(
       commentText.value,
-      thread.value.post,
-      thread.value.post
+      primaryThread.post,
+      primaryThread.post
     )
     commentText.value = ''
     error.value = ''
-    await fetchThread()
+    await fetchThreads()
   } catch (err) {
     error.value = 'Failed to post comment: ' + err.message
   } finally {
@@ -102,14 +136,18 @@ const handleReplySubmit = async (parentPost) => {
   if (!replyText.value.trim()) return
   posting.value = true
   try {
+    // Find which thread this parent belongs to so we use correct root
+    // For simplicity, we can use the root from the first thread or find match
+    const rootPost = threads.value[0].post // Fallback
+    
     await atproto.replyToBluesky(
       replyText.value,
-      thread.value.post, // Keep root as the original blog post link
+      rootPost, 
       parentPost
     )
     replyText.value = ''
     replyingTo.value = null
-    await fetchThread()
+    await fetchThreads()
   } catch (err) {
     error.value = 'Failed to post reply: ' + err.message
   } finally {
@@ -129,11 +167,11 @@ const formatDate = (dateStr) => {
 
 <template>
   <div class="comments-section mt-16 pt-12 border-t">
-    <div v-if="!blueskyUri || (blueskyUri && !thread && !loading)" class="text-center py-10 transition-all">
-      <div v-if="blueskyUri && !thread && !loading" class="mb-6">
+    <div v-if="(props.blueskyUris?.length === 0 && !props.blueskyUri) || (threads.length === 0 && !loading)" class="text-center py-10 transition-all">
+      <div v-if="(props.blueskyUris?.length > 0 || props.blueskyUri) && threads.length === 0 && !loading" class="mb-6">
         <v-icon icon="mdi-link-variant-off" size="48" color="warning" class="mb-4 opacity-50"></v-icon>
-        <h3 class="text-h6 font-weight-bold mb-2">BlueSky thread not found.</h3>
-        <p class="text-secondary max-w-sm mx-auto mb-6">The linked post might have been deleted or moved on BlueSky.</p>
+        <h3 class="text-h6 font-weight-bold mb-2">BlueSky threads not found.</h3>
+        <p class="text-secondary max-w-sm mx-auto mb-6">Linked posts might have been deleted or moved on BlueSky.</p>
       </div>
       <div v-else class="mb-6">
         <h3 class="text-h6 font-weight-bold mb-4">No comments yet.</h3>
@@ -141,7 +179,7 @@ const formatDate = (dateStr) => {
         <p v-else class="text-secondary">Discussion for this post hasn't started on BlueSky yet.</p>
       </div>
 
-      <template v-if="isOwner">
+      <template v-if="auth.user">
         <v-btn
           color="primary"
           prepend-icon="mdi-share-variant"
@@ -150,7 +188,7 @@ const formatDate = (dateStr) => {
           elevation="2"
           @click="handlePostThread"
         >
-          {{ blueskyUri ? 'Re-create BlueSky Thread' : 'Post to BlueSky' }}
+          Post to BlueSky
         </v-btn>
       </template>
     </div>
@@ -159,17 +197,20 @@ const formatDate = (dateStr) => {
       <div class="d-flex align-center mb-8">
         <h3 class="text-h5 font-weight-black">Responses</h3>
         <v-spacer></v-spacer>
-        <v-btn 
-          v-if="blueskyUri" 
-          :href="'https://bsky.app/profile/' + blueskyUri.split('/')[2] + '/post/' + blueskyUri.split('/').pop()" 
-          target="_blank"
-          variant="text"
-          size="small"
-          prepend-icon="mdi-open-in-new"
-          color="secondary"
-        >
-          View on BlueSky
-        </v-btn>
+        <div class="d-flex gap-2">
+          <v-chip
+            v-for="(t, idx) in threads"
+            :key="t.post.uri"
+            :href="'https://bsky.app/profile/' + t.post.author.handle + '/post/' + t.post.uri.split('/').pop()"
+            target="_blank"
+            variant="tonal"
+            size="small"
+            prepend-icon="mdi-open-in-new"
+            class="px-3"
+          >
+            Thread {{ idx + 1 }}
+          </v-chip>
+        </div>
       </div>
 
       <!-- Comment Input -->
@@ -210,8 +251,8 @@ const formatDate = (dateStr) => {
       </div>
 
       <!-- Thread List -->
-      <div v-else-if="thread && thread.replies" class="replies-list">
-        <div v-for="reply in thread.replies" :key="reply.post.cid" class="reply-item py-6 border-b">
+      <div v-else-if="replies.length > 0" class="replies-list">
+        <div v-for="reply in replies" :key="reply.post.cid" class="reply-item py-6 border-b">
           <div class="d-flex align-start mb-2">
             <v-avatar size="32" class="mr-3 mt-1">
               <v-img v-if="reply.post.author.avatar" :src="reply.post.author.avatar" cover></v-img>
@@ -288,10 +329,10 @@ const formatDate = (dateStr) => {
             </div>
           </v-expand-transition>
         </div>
-        
-        <div v-if="thread.replies.length === 0" class="text-center py-8 opacity-50">
-           Be the first to share a thought.
-        </div>
+      </div>
+      
+      <div v-else class="text-center py-8 opacity-50">
+         Be the first to share a thought.
       </div>
     </div>
   </div>

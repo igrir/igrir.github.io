@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
@@ -17,51 +17,72 @@ const error = ref('')
 const isEdit = ref(false)
 const rkey = ref('')
 const originalCreatedAt = ref('')
+const tags = ref([])
+const tagInput = ref('')
 
-onMounted(async () => {
+const loadPost = async () => {
   const queryRkey = route.query.rkey
-  if (queryRkey) {
-    isEdit.value = true
-    rkey.value = queryRkey
-    loading.value = true
-    try {
-      const actor = auth.user.handle
-      const uri = `at://${actor}/xyz.atoblog.post/${queryRkey}`
-      const { post } = await atproto.getPost(uri)
-      
-      title.value = post.record.title
-      originalCreatedAt.value = post.record.createdAt
-      
-      if (post.record.blocks) {
-        blocks.value = post.record.blocks.map((b, index) => ({
-          id: Date.now() + index,
-          type: b.type,
-          value: b.value || '',
-          blob: b.blob || null,
-          preview: b.type === 'image' ? getExistingImageUrl(post.author.did, b.blob) : ''
-        }))
-      } else {
-        // Migration for legacy posts
-        blocks.value = [
-          { id: Date.now(), type: 'text', value: post.record.text || '' }
-        ]
-        if (post.record.image) {
-          blocks.value.unshift({
-            id: Date.now() - 1,
-            type: 'image',
-            blob: post.record.image,
-            preview: getExistingImageUrl(post.author.did, post.record.image)
-          })
-        }
-      }
-    } catch (err) {
-      error.value = 'Failed to load post for editing.'
-      console.error(err)
-    } finally {
-      loading.value = false
-    }
+  
+  if (!queryRkey) {
+    // Reset for new post
+    isEdit.value = false
+    rkey.value = ''
+    title.value = ''
+    tags.value = []
+    tagInput.value = ''
+    blocks.value = [
+      { id: Date.now(), type: 'text', value: '' }
+    ]
+    error.value = ''
+    return
   }
-})
+
+  isEdit.value = true
+  rkey.value = queryRkey
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const actor = auth.user.did || auth.user.handle
+    const uri = `at://${actor}/xyz.atoblog.post/${queryRkey}`
+    const { post } = await atproto.getPost(uri)
+    
+    title.value = post.record.title
+    originalCreatedAt.value = post.record.createdAt
+    tags.value = post.record.tags || []
+    
+    if (post.record.blocks) {
+      blocks.value = post.record.blocks.map((b, index) => ({
+        id: Date.now() + index,
+        type: b.type,
+        value: b.value || '',
+        blob: b.blob || null,
+        preview: b.type === 'image' ? getExistingImageUrl(post.author.did, b.blob) : ''
+      }))
+    } else {
+      // Migration for legacy posts
+      blocks.value = [
+        { id: Date.now(), type: 'text', value: post.record.text || '' }
+      ]
+      if (post.record.image) {
+        blocks.value.unshift({
+          id: Date.now() - 1,
+          type: 'image',
+          blob: post.record.image,
+          preview: getExistingImageUrl(post.author.did, post.record.image)
+        })
+      }
+    }
+  } catch (err) {
+    error.value = 'Failed to load post for editing.'
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadPost)
+watch(() => route.query.rkey, loadPost)
 
 const getExistingImageUrl = (did, blob) => {
   if (!blob) return ''
@@ -107,6 +128,42 @@ const moveBlock = (index, direction) => {
   blocks.value[newIndex] = temp
 }
 
+const addTag = (e) => {
+  if (e && (e.key === ' ' || e.key === ',')) {
+    e.preventDefault()
+  }
+  const tag = tagInput.value.trim().replace(/,$/, '').toLowerCase()
+  if (tag && !tags.value.includes(tag)) {
+    tags.value.push(tag)
+  }
+  tagInput.value = ''
+}
+
+const removeTag = (tag) => {
+  tags.value = tags.value.filter(t => t !== tag)
+}
+
+const lastFocusedIndex = ref(0)
+
+const handlePaste = (e) => {
+  const items = (e.clipboardData || e.originalEvent.clipboardData).items
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) {
+      const file = item.getAsFile()
+      if (file) {
+        // Insert after the last focused block or at the end
+        const insertIndex = lastFocusedIndex.value + 1
+        blocks.value.splice(insertIndex, 0, {
+          id: Date.now(),
+          type: 'image',
+          file: file,
+          preview: URL.createObjectURL(file)
+        })
+      }
+    }
+  }
+}
+
 const handlePublish = async () => {
   if (!title.value.trim()) {
     error.value = 'Please enter a title.'
@@ -141,9 +198,23 @@ const handlePublish = async () => {
     }
 
     if (isEdit.value) {
-      await atproto.updatePost(rkey.value, title.value, finalBlocks, originalCreatedAt.value)
+      // Collect existing URIs
+      const { post } = await atproto.getPost(`at://${auth.user.handle}/xyz.atoblog.post/${rkey.value}`)
+      const uris = post.record.blueskyUris || []
+      if (post.record.blueskyUri && !uris.includes(post.record.blueskyUri)) {
+          uris.push(post.record.blueskyUri)
+      }
+
+      await atproto.updatePost(
+        rkey.value,
+        title.value,
+        finalBlocks,
+        originalCreatedAt.value,
+        uris,
+        tags.value
+      )
     } else {
-      await atproto.createPost(title.value, finalBlocks)
+      await atproto.createPost(title.value, finalBlocks, tags.value)
     }
     router.push('/')
   } catch (err) {
@@ -162,7 +233,7 @@ const handlePublish = async () => {
 
 <template>
   <v-row justify="center" class="py-12 bg-white min-h-screen">
-    <v-col cols="12" md="10" lg="8" class="editor-col">
+    <v-col cols="12" md="10" lg="8" class="editor-col" @paste="handlePaste">
       <div class="d-flex align-center mb-12">
         <v-btn to="/" icon="mdi-close" variant="text" class="mr-4"></v-btn>
         <span class="text-subtitle-1 text-secondary">{{ isEdit ? 'Edit Draft' : 'Draft' }}</span>
@@ -191,10 +262,42 @@ const handlePublish = async () => {
         v-model="title"
         placeholder="Title"
         variant="plain"
-        class="title-input mb-8"
+        class="title-input mb-2"
         :disabled="loading"
         hide-details
       ></v-text-field>
+
+      <div class="tags-input-container mb-12">
+        <div class="d-flex flex-wrap ga-3 mb-3">
+          <v-fade-transition group>
+            <v-chip
+              v-for="tag in tags"
+              :key="tag"
+              closable
+              size="small"
+              variant="flat"
+              color="grey-lighten-4"
+              class="tag-pill text-secondary text-uppercase font-weight-bold px-3"
+              style="letter-spacing: 0.05em; font-size: 0.7rem;"
+              @click:close="removeTag(tag)"
+            >
+              {{ tag }}
+            </v-chip>
+          </v-fade-transition>
+        </div>
+        <v-text-field
+          v-model="tagInput"
+          placeholder="Add a tag..."
+          variant="plain"
+          density="compact"
+          hide-details
+          class="tag-field"
+          @keydown.enter.prevent="addTag"
+          @keydown.space="addTag"
+          @keydown.comma="addTag"
+          @blur="addTag"
+        ></v-text-field>
+      </div>
 
       <div class="blocks-container">
         <div v-for="(block, index) in blocks" :key="block.id" class="block-wrapper mb-4">
@@ -220,6 +323,7 @@ const handlePublish = async () => {
                 class="text-block-input text-serif"
                 :disabled="loading"
                 hide-details
+                @focus="lastFocusedIndex = index"
               ></v-textarea>
               
               <div v-if="block.type === 'image' && block.preview" class="image-block-container position-relative mb-6">
@@ -292,6 +396,26 @@ const handlePublish = async () => {
   right: 10px;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+.tags-input-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.tag-field :deep(input) {
+  font-size: 1rem !important;
+  color: #6B6B6B !important;
+  padding-left: 0 !important;
+}
+
+.tag-field :deep(.v-field__outline) {
+  display: none;
+}
+
+.tag-pill {
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
 }
 
 .min-height-screen {

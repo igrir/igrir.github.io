@@ -10,6 +10,7 @@ const route = useRoute()
 const posts = ref([])
 const loading = ref(false)
 const filterTag = ref(route.query.tag || '')
+const blogOwner = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
 const settings = ref({
   title: 'Reflections on Decentralization',
   description: 'Stories and insights from the AT Protocol'
@@ -29,15 +30,13 @@ const filteredPosts = computed(() => {
 const fetchPosts = async () => {
   loading.value = true
   try {
-    const actor = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
-    
     // Fetch settings and posts in parallel
     const [blogPosts, blogSettings] = await Promise.all([
-      atproto.getPosts(actor),
-      atproto.getSettings(actor)
+      atproto.getPosts(blogOwner),
+      atproto.getSettings(blogOwner)
     ])
     
-    const isOwner = auth.user && (auth.user.handle === actor || auth.user.did === actor)
+    const isOwner = auth.user && (auth.user.handle === blogOwner || auth.user.did === blogOwner)
     
     posts.value = blogPosts.filter(p => !p.post.record.isDraft || isOwner)
     settings.value = blogSettings
@@ -128,7 +127,9 @@ const getSnippet = (item) => {
             </div>
 
             <router-link 
-              :to="{ name: 'post-detail', params: { repo: item.post.author.handle, rkey: item.post.uri.split('/').pop() } }"
+              :to="item.post.author.handle === blogOwner || item.post.author.did === blogOwner
+                ? { name: 'post-detail-owner', params: { rkey: item.post.uri.split('/').pop() } }
+                : { name: 'post-detail', params: { repo: item.post.author.handle, rkey: item.post.uri.split('/').pop() } }"
               class="text-decoration-none"
             >
               <h3 class="text-h5 font-weight-black mb-2 post-title">

@@ -10,6 +10,11 @@ const router = createRouter({
             component: FeedView,
         },
         {
+            path: '/p/:rkey',
+            name: 'post-detail-owner',
+            component: () => import('../views/PostDetailView.vue'),
+        },
+        {
             path: '/post/:repo/:rkey',
             name: 'post-detail',
             component: () => import('../views/PostDetailView.vue'),

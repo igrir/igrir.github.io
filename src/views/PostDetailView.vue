@@ -23,7 +23,8 @@ const postUrl = computed(() => typeof window !== 'undefined' ? window.location.h
 
 const fetchPost = async () => {
   loading.value = true
-  const { repo, rkey } = route.params
+  const { rkey } = route.params
+  const repo = route.params.repo || import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
   const uri = `at://${repo}/xyz.atoblog.post/${rkey}`
   
   try {

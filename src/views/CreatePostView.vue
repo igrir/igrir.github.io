@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
@@ -7,6 +7,11 @@ import { useAuthStore } from '../stores/auth'
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+
+const isOwnerMode = computed(() => {
+  const owner = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
+  return auth.user && (auth.user.handle === owner || auth.user.did === owner)
+})
 
 const title = ref('')
 const blocks = ref([
@@ -485,14 +490,21 @@ const handlePublish = async (saveAsDraft = false) => {
       publishedRkey = response.data.uri.split('/').pop()
     }
     
+    const blogOwner = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
+    const isOwner = auth.user && (auth.user.handle === blogOwner || auth.user.did === blogOwner)
+
     // Redirect to the post detail page
-    router.push({ 
-      name: 'post-detail', 
-      params: { 
-        repo: auth.user.handle, 
-        rkey: publishedRkey 
-      } 
-    })
+    if (isOwner) {
+      router.push({ 
+        name: 'post-detail-owner', 
+        params: { rkey: publishedRkey } 
+      })
+    } else {
+      router.push({ 
+        name: 'post-detail', 
+        params: { repo: auth.user.handle, rkey: publishedRkey } 
+      })
+    }
   } catch (err) {
     if (err.status === 401 || err.message?.includes('Authentication')) {
       error.value = 'Your session has expired. Please log in again to publish your story.'
@@ -537,7 +549,11 @@ const handlePublish = async (saveAsDraft = false) => {
     <v-col cols="12" md="10" lg="8" class="editor-col" @paste="handlePaste">
       <div class="d-flex align-center mb-12" style="gap: 16px;">
         <v-btn 
-          :to="isEdit ? { name: 'post-detail', params: { repo: auth.user?.handle, rkey: rkey } } : '/'" 
+          :to="isEdit ? (
+            isOwnerMode
+            ? { name: 'post-detail-owner', params: { rkey: rkey } }
+            : { name: 'post-detail', params: { repo: auth.user?.handle, rkey: rkey } }
+          ) : '/'" 
           icon="mdi-close" 
           variant="text" 
         ></v-btn>

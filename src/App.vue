@@ -7,6 +7,7 @@ import { atproto } from './services/atproto'
 
 const auth = useAuthStore()
 const router = useRouter()
+const blogOwner = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
 
 onMounted(async () => {
   atproto.onLogout = () => {
@@ -36,6 +37,15 @@ const handleLogout = () => {
       
       <template v-if="auth.user">
         <v-btn to="/new-post" variant="text" class="mx-1" prepend-icon="mdi-pencil">New Post</v-btn>
+        <v-btn
+          v-if="auth.user.handle !== blogOwner && auth.user.did !== blogOwner"
+          :to="`/post/${auth.user.handle}`"
+          variant="text"
+          class="mx-1"
+          prepend-icon="mdi-account-circle"
+        >
+          Your Posts
+        </v-btn>
         <v-menu location="bottom end">
           <template v-slot:activator="{ props }">
             <v-avatar v-bind="props" size="36" class="cursor-pointer mx-2 border" color="surface">

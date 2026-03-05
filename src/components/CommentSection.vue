@@ -47,9 +47,9 @@ const resolveLinks = async () => {
       if (repo.startsWith('did:')) {
         // attempt to fetch profile to convert DID to handle
         try {
-          const prof = await atproto.publicAgent.getProfile({ actor: repo })
-          if (prof?.data?.handle) {
-            repo = prof.data.handle
+          const prof = await atproto.getPublicProfile(repo)
+          if (prof?.handle) {
+            repo = prof.handle
           }
         } catch (e) {
           console.warn('Could not resolve DID to handle for', repo, e)
@@ -130,23 +130,35 @@ const fetchThreads = async () => {
 
     threads.value = threadResults.filter(t => t !== null)
 
-    // Aggregating all replies from all threads
-    const allReplies = []
+    // walk replies recursively, collecting depth information
+    const structured = []
+    const gather = (replyList, depth) => {
+      if (!replyList) return
+      replyList.forEach(r => {
+        structured.push({ reply: r, depth })
+        if (r.replies && r.replies.length) {
+          gather(r.replies, depth + 1)
+        }
+      })
+    }
+
     threads.value.forEach(t => {
       if (t.replies) {
-        allReplies.push(...t.replies)
+        gather(t.replies, 0)
       }
     })
 
-    // De-duplicate (in case overlapping threads) and sort
-    const uniqueRepliesMap = new Map()
-    allReplies.forEach(r => {
-      uniqueRepliesMap.set(r.post.uri, r)
+    // deduplicate keeping smallest depth (closest to root)
+    const uniqueMap = new Map()
+    structured.forEach(item => {
+      const uri = item.reply.post.uri
+      if (!uniqueMap.has(uri) || item.depth < uniqueMap.get(uri).depth) {
+        uniqueMap.set(uri, item)
+      }
     })
 
-    replies.value = Array.from(uniqueRepliesMap.values()).sort((a, b) => {
-      return new Date(b.post.indexedAt) - new Date(a.post.indexedAt)
-    })
+    // convert back to array preserving insertion order (depth-first traversal)
+    replies.value = Array.from(uniqueMap.values())
   } catch (err) {
     console.error('Failed to fetch threads:', err)
   } finally {
@@ -252,6 +264,48 @@ const formatDate = (dateStr) => {
     minute: '2-digit'
   })
 }
+
+// helpers for media attachments embedded in BlueSky posts
+const constructUrl = (actor, blob) => {
+  if (!blob || !actor) return null
+  const did = typeof actor === 'string' ? actor : actor.did || actor.handle
+  if (!did || !did.startsWith('did:')) return null
+  const cid = blob.ref.$link || blob.ref
+  const ext = blob.mimeType.split('/').pop()
+  return `https://cdn.bsky.app/img/feed_fullsize/plain/${did}/${cid}@${ext}`
+}
+
+const extractMedia = (post) => {
+  const media = { images: [], videos: [] }
+  if (!post?.record?.embed) return media
+  const actor = post.author?.did || post.author?.handle || post.author
+  const emb = post.record.embed
+  // image embeds
+  if (emb.images) {
+    emb.images.forEach(img => {
+      const url = constructUrl(actor, img.image)
+      if (url) media.images.push({ url, alt: img.alt || '' })
+    })
+  }
+  // generic media (video/audio) embeds
+  if (emb.media) {
+    emb.media.forEach(m => {
+      if (m.video) {
+        const url = constructUrl(actor, m.video)
+        if (url) media.videos.push({ url, alt: m.alt || '' })
+      } else if (m.image) {
+        const url = constructUrl(actor, m.image)
+        if (url) media.images.push({ url, alt: m.alt || '' })
+      }
+    })
+  }
+  // external embed thumbnail
+  if (emb.external && emb.external.thumb) {
+    const url = constructUrl(actor, emb.external.thumb)
+    if (url) media.images.push({ url, alt: emb.external.title || '' })
+  }
+  return media
+}
 </script>
 
 <template>
@@ -287,7 +341,7 @@ const formatDate = (dateStr) => {
         </p>
       </div>
 
-      <template v-if="auth.user">
+      <template v-if="auth.user && props.isOwner">
         <v-btn
           color="primary"
           prepend-icon="mdi-share-variant"
@@ -296,7 +350,7 @@ const formatDate = (dateStr) => {
           elevation="2"
           @click="handlePostThread"
         >
-          Post to BlueSky
+          Post to BlueSky to start comments thread
         </v-btn>
       </template>
     </div>
@@ -316,7 +370,7 @@ const formatDate = (dateStr) => {
             prepend-icon="mdi-open-in-new"
             class="px-3"
           >
-            Thread {{ idx + 1 }}
+            Thread
           </v-chip>
         </div>
       </div>
@@ -360,48 +414,63 @@ const formatDate = (dateStr) => {
 
       <!-- Thread List -->
       <div v-else-if="replies.length > 0" class="replies-list">
-        <div v-for="reply in replies" :key="reply.post.cid" class="reply-item py-6 border-b">
+        <div v-for="item in replies" :key="item.reply.post.cid" class="reply-item py-6 border-b" :style="{ paddingLeft: item.depth * 32 + 'px' }">
           <div class="d-flex align-start mb-2">
             <v-avatar size="32" class="mr-5 mt-1">
-              <v-img v-if="reply.post.author.avatar" :src="reply.post.author.avatar" cover></v-img>
+              <v-img v-if="item.reply.post.author.avatar" :src="item.reply.post.author.avatar" cover></v-img>
               <v-icon v-else icon="mdi-account" size="small"></v-icon>
             </v-avatar>
             <div class="flex-grow-1">
               <div class="d-flex align-center gap-2 pl-2">
-                <span class="text-subtitle-2 font-weight-bold">{{ reply.post.author.displayName || reply.post.author.handle }}</span>
+                <span class="text-subtitle-2 font-weight-bold">{{ item.reply.post.author.displayName || item.reply.post.author.handle }}</span>
                 <a 
-                  :href="'https://bsky.app/profile/' + reply.post.author.handle + '/post/' + reply.post.uri.split('/').pop()" 
+                  :href="'https://bsky.app/profile/' + item.reply.post.author.handle + '/post/' + item.reply.post.uri.split('/').pop()" 
                   target="_blank" 
                   class="text-caption text-secondary text-decoration-none hover-underline"
                 >
-                  {{ formatDate(reply.post.indexedAt) }}
+                  {{ formatDate(item.reply.post.indexedAt) }}
                 </a>
               </div>
-              <p class="text-body-1 mt-1 comment-text pl-2">{{ reply.post.record.text }}</p>
+              <p class="text-body-1 mt-1 comment-text pl-2">{{ item.reply.post.record.text }}</p>
+
+              <!-- media attachments (images/videos) -->
+              <div v-if="extractMedia(item.reply.post).images.length || extractMedia(item.reply.post).videos.length" class="pl-2 mt-4 comment-media">
+                <div v-for="img in extractMedia(item.reply.post).images" :key="img.url" class="mb-4">
+                  <v-img
+                    :src="img.url"
+                    :alt="img.alt"
+                    max-width="400"
+                    class="rounded-sm shadow-sm"
+                  ></v-img>
+                </div>
+                <div v-for="vid in extractMedia(item.reply.post).videos" :key="vid.url" class="mb-4">
+                  <video :src="vid.url" controls class="rounded-sm shadow-sm max-w-full"></video>
+                </div>
+              </div>
             </div>
           </div>
           <div class="d-flex align-center pl-11 gap-4">
             <v-btn 
-              :icon="reply.post.viewer?.like ? 'mdi-heart' : 'mdi-heart-outline'" 
+              :icon="item.reply.post.viewer?.like ? 'mdi-heart' : 'mdi-heart-outline'" 
               variant="text" 
               size="x-small" 
-              :color="reply.post.viewer?.like ? 'error' : 'secondary'" 
+              :color="item.reply.post.viewer?.like ? 'error' : 'secondary'" 
               density="comfortable"
-              @click="handleLike(reply.post)"
+              @click="handleLike(item.reply.post)"
             >
-              <v-icon left size="16">{{ reply.post.viewer?.like ? 'mdi-heart' : 'mdi-heart-outline' }}</v-icon>
-              {{ reply.post.likeCount || 0 }}
+              <v-icon left size="16">{{ item.reply.post.viewer?.like ? 'mdi-heart' : 'mdi-heart-outline' }}</v-icon>
+              {{ item.reply.post.likeCount || 0 }}
             </v-btn>
             <v-btn 
               icon="mdi-repeat" 
               variant="text" 
               size="x-small" 
-              :color="reply.post.viewer?.repost ? 'success' : 'secondary'" 
+              :color="item.reply.post.viewer?.repost ? 'success' : 'secondary'" 
               density="comfortable"
-              @click="handleRepost(reply.post)"
+              @click="handleRepost(item.reply.post)"
             >
               <v-icon left size="16">mdi-repeat</v-icon>
-              {{ reply.post.repostCount || 0 }}
+              {{ item.reply.post.repostCount || 0 }}
             </v-btn>
             <v-btn 
               icon="mdi-comment-outline" 
@@ -409,20 +478,20 @@ const formatDate = (dateStr) => {
               size="x-small" 
               color="secondary" 
               density="comfortable"
-              @click="replyingTo === reply.post.cid ? replyingTo = null : replyingTo = reply.post.cid"
+              @click="replyingTo === item.reply.post.cid ? replyingTo = null : replyingTo = item.reply.post.cid"
             >
               <v-icon left size="16">mdi-comment-outline</v-icon>
-              {{ reply.post.replyCount || 0 }}
+              {{ item.reply.post.replyCount || 0 }}
             </v-btn>
           </div>
 
           <!-- Inline Reply Field -->
           <v-expand-transition>
-            <div v-if="replyingTo === reply.post.cid" class="pl-11 mt-4">
+            <div v-if="replyingTo === item.reply.post.cid" class="pl-11 mt-4">
               <v-card class="rounded-lg border pa-3 bg-grey-lighten-5" elevation="0">
                 <v-textarea
                   v-model="replyText"
-                  :placeholder="'Reply to ' + (reply.post.author.displayName || reply.post.author.handle) + '...'"
+                  :placeholder="'Reply to ' + (item.reply.post.author.displayName || item.reply.post.author.handle) + '...'"
                   variant="plain"
                   auto-grow
                   rows="1"
@@ -431,7 +500,7 @@ const formatDate = (dateStr) => {
                 ></v-textarea>
                 <div class="d-flex justify-end mt-2 gap-2">
                    <v-btn variant="text" size="x-small" @click="replyingTo = null">Cancel</v-btn>
-                   <v-btn color="success" size="x-small" class="rounded-pill font-weight-bold" @click="handleReplySubmit(reply.post)" :loading="posting">Reply</v-btn>
+                   <v-btn color="success" size="x-small" class="rounded-pill font-weight-bold" @click="handleReplySubmit(item.reply.post)" :loading="posting">Reply</v-btn>
                 </div>
               </v-card>
             </div>
@@ -480,6 +549,16 @@ const formatDate = (dateStr) => {
 
 .reply-item {
   transition: background-color 0.2s ease;
+}
+
+.comment-media img,
+.comment-media video {
+  display: block;
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+.comment-media video {
+  max-height: 300px;
 }
 
 .opacity-60 { opacity: 0.6; }

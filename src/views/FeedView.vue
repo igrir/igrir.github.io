@@ -15,10 +15,28 @@ const settings = ref({
   title: 'Reflections on Decentralization',
   description: 'Stories and insights from the AT Protocol'
 })
+// profile info for current repo, used to display avatar
+const repoProfile = ref({ handle: '', avatar: '' })
+
+// compute which repository's feed we should show (env default or route param)
+const currentRepo = computed(() => route.params.repo || blogOwner)
+
+// whether the active user owns this repo
+const isOwner = computed(() => {
+  return auth.user && (auth.user.handle === currentRepo.value || auth.user.did === currentRepo.value)
+})
 
 watch(() => route.query.tag, (newTag) => {
   filterTag.value = newTag || ''
 })
+
+watch(
+  () => route.params.repo,
+  () => {
+    filterTag.value = '' // clear tag filter when switching profile
+    fetchPosts()
+  }
+)
 
 const filteredPosts = computed(() => {
   if (!filterTag.value) return posts.value
@@ -30,16 +48,45 @@ const filteredPosts = computed(() => {
 const fetchPosts = async () => {
   loading.value = true
   try {
-    // Fetch settings and posts in parallel
-    const [blogPosts, blogSettings] = await Promise.all([
-      atproto.getPosts(blogOwner),
-      atproto.getSettings(blogOwner)
+    const repo = currentRepo.value
+    // Fetch posts + settings for the requested repo.
+    const postsPromise = atproto.getPosts(repo)
+    const settingsPromise = atproto.getSettings(repo)
+    // fetch profile via the public API host to avoid auth errors
+    const profilePromise = fetch(
+      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(repo)}`
+    )
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+
+    const [blogPosts, blogSettings, profile] = await Promise.all([
+      postsPromise,
+      settingsPromise.catch(err => {
+        console.warn('Failed to load settings for', repo, err)
+        return null
+      }),
+      profilePromise
     ])
-    
-    const isOwner = auth.user && (auth.user.handle === blogOwner || auth.user.did === blogOwner)
-    
-    posts.value = blogPosts.filter(p => !p.post.record.isDraft || isOwner)
-    settings.value = blogSettings
+
+    posts.value = blogPosts.filter(p => !p.post.record.isDraft || isOwner.value)
+
+    // apply settings if we got them, otherwise fallback to generic title
+    if (blogSettings) {
+      settings.value = blogSettings
+    } else {
+      settings.value = {
+        title: repo === blogOwner ? settings.value.title : `${repo}'s posts`,
+        description: repo === blogOwner ? settings.value.description : ''
+      }
+    }
+
+    if (profile) {
+      repoProfile.value = profile
+    }
+    // if (profile && profile.data) {
+    // } else {
+    //   repoProfile.value = { handle: repo, avatar: '' }
+    // }
   } catch (error) {
     console.error('Failed to fetch posts or settings:', error)
     posts.value = []
@@ -49,6 +96,9 @@ const fetchPosts = async () => {
 }
 
 onMounted(fetchPosts)
+
+// also refetch if tag or repo parameter changes
+watch(filterTag, fetchPosts)
 
 const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleDateString(undefined, {
@@ -99,6 +149,11 @@ const getSnippet = (item) => {
   <div class="feed-container py-12">
     <header class="blog-header mb-32 text-center pb-16 border-b">
       <div v-if="!loading">
+        <template v-if="repoProfile.avatar">
+          <v-avatar size="64" class="mb-4 mx-auto">
+            <v-img :src="repoProfile.avatar" cover></v-img>
+          </v-avatar>
+        </template>
         <h1 class="text-h1 font-weight-black mb-6 blog-title">{{ settings.title }}</h1>
         <p class="text-h5 text-secondary font-weight-medium blog-description max-w-2xl mx-auto">
           {{ settings.description }}

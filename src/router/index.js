@@ -19,6 +19,12 @@ const router = createRouter({
             name: 'post-detail',
             component: () => import('../views/PostDetailView.vue'),
         },
+        // profile-specific feed (view all posts by a given handle)
+        {
+            path: '/post/:repo',
+            name: 'user-feed',
+            component: FeedView,
+        },
         {
             path: '/new-post',
             name: 'new-post',

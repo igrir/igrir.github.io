@@ -92,6 +92,21 @@ class AtprotoService {
         if (this.onLogout) this.onLogout()
     }
 
+    // fetch profile from public API host to avoid auth errors
+    async getPublicProfile(actor) {
+        try {
+            const url = new URL('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile')
+            url.searchParams.set('actor', actor)
+            const res = await fetch(url.toString(), { method: 'GET' })
+            if (!res.ok) throw new Error('status ' + res.status)
+            const data = await res.json()
+            return data?.data || null
+        } catch (err) {
+            console.warn('public profile lookup failed for', actor, err)
+            return null
+        }
+    }
+
     async getPosts(repo) {
         try {
             // Use publicAgent for reads to avoid 401s from expired sessions
@@ -101,11 +116,11 @@ class AtprotoService {
                 limit: 20,
             })
 
-            // Get profile for author info
+            // Get profile for author info via public API (avoids 401 from PDS)
             let profileData = { handle: repo }
             try {
-                const profile = await this.publicAgent.getProfile({ actor: repo })
-                profileData = profile.data
+                const prof = await this.getPublicProfile(repo)
+                if (prof) profileData = prof
             } catch (pError) {
                 console.warn('Could not fetch profile, using fallback', pError)
             }
@@ -151,8 +166,8 @@ class AtprotoService {
             // Get profile for author info
             let profileData = { handle: repo }
             try {
-                const profile = await this.publicAgent.getProfile({ actor: repo })
-                profileData = profile.data
+                const prof = await this.getPublicProfile(repo)
+                if (prof) profileData = prof
             } catch (pError) {
                 console.warn('Could not fetch profile for post detail', pError)
             }

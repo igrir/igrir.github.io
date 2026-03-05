@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { atproto } from '../services/atproto'
 import { useAuthStore } from '../stores/auth'
 
@@ -22,25 +22,114 @@ const posting = ref(false)
 const commentText = ref('')
 const error = ref('')
 
-const fetchThreads = async () => {
+// indicates we tried to fetch publicly and all calls failed due to auth restrictions
+const unauthError = ref(false)
+
+// derive whether any URI was supplied so we can decide which message to show
+const hasUri = computed(() => {
+  return (props.blueskyUris && props.blueskyUris.length > 0) || !!props.blueskyUri
+})
+
+// build array of converted BlueSky web links, resolving any DID repos to handles if possible
+const blueSkyLinks = ref([])
+
+const resolveLinks = async () => {
   const uris = [...(props.blueskyUris || [])]
   if (props.blueskyUri && !uris.includes(props.blueskyUri)) {
     uris.push(props.blueskyUri)
   }
-  
-  if (uris.length === 0) return
-  
+  const results = await Promise.all(
+    uris.map(async uri => {
+      const parts = uri.replace('at://', '').split('/')
+      let repo = parts[0]
+      const rkey = parts[2]
+      if (!repo || !rkey) return null
+      if (repo.startsWith('did:')) {
+        // attempt to fetch profile to convert DID to handle
+        try {
+          const prof = await atproto.publicAgent.getProfile({ actor: repo })
+          if (prof?.data?.handle) {
+            repo = prof.data.handle
+          }
+        } catch (e) {
+          console.warn('Could not resolve DID to handle for', repo, e)
+        }
+      }
+      return `https://bsky.app/profile/${repo}/post/${rkey}`
+    })
+  )
+  blueSkyLinks.value = results.filter(r => r)
+}
+
+// recompute when props change
+watch([() => props.blueskyUri, () => props.blueskyUris], resolveLinks, { deep: true, immediate: true })
+
+// helper that fetches a thread directly using GET against the public Bluesky API
+const fetchThreadViaXrpc = async (uri) => {
+  try {
+    // encode parameters in query string as per API spec
+    const url = new URL('https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread')
+    url.searchParams.set('uri', uri)
+    url.searchParams.set('depth', '10')
+    url.searchParams.set('parentHeight', '0')
+    const res = await fetch(url.toString(), { method: 'GET' })
+    if (!res.ok) throw new Error(`status ${res.status}`)
+    const data = await res.json()
+    return data?.thread || null
+  } catch (err) {
+    console.warn('XRPC fallback failed for', uri, err)
+    return null
+  }
+}
+
+const fetchThreads = async () => {
+  // prepare list of BlueSky thread URIs, supporting legacy single/array props
+  const uris = [...(props.blueskyUris || [])]
+  if (props.blueskyUri && !uris.includes(props.blueskyUri)) {
+    uris.push(props.blueskyUri)
+  }
+
+  // if we don’t have any URIs there’s nothing to load; clear state and stop loading
+  if (uris.length === 0) {
+    threads.value = []
+    replies.value = []
+    loading.value = false
+    return
+  }
+
   loading.value = true
   try {
-    const threadResults = await Promise.all(
+    // first attempt using atproto service (authenticated or public)
+    let threadResults = await Promise.all(
       uris.map(uri => atproto.getPostThread(uri).catch(err => {
         console.warn(`Failed to fetch thread for ${uri}:`, err)
         return null
       }))
     )
-    
+
+    // if all calls returned null and we're a guest, remember that
+    if (!auth.user && threadResults.every(r => r === null)) {
+      unauthError.value = true
+    } else {
+      unauthError.value = false
+    }
+
+    // fallback: try direct XRPC fetch for any null entries
+    if (threadResults.some(r => r === null)) {
+      await Promise.all(uris.map(async (uri, idx) => {
+        if (threadResults[idx] === null) {
+          try {
+            const fallback = await fetchThreadViaXrpc(uri)
+            if (fallback) threadResults[idx] = fallback
+          } catch (__) {
+            // ignore
+          }
+        }
+      }))
+    }
+
     threads.value = threadResults.filter(t => t !== null)
-    
+
     // Aggregating all replies from all threads
     const allReplies = []
     threads.value.forEach(t => {
@@ -48,13 +137,13 @@ const fetchThreads = async () => {
         allReplies.push(...t.replies)
       }
     })
-    
+
     // De-duplicate (in case overlapping threads) and sort
     const uniqueRepliesMap = new Map()
     allReplies.forEach(r => {
       uniqueRepliesMap.set(r.post.uri, r)
     })
-    
+
     replies.value = Array.from(uniqueRepliesMap.values()).sort((a, b) => {
       return new Date(b.post.indexedAt) - new Date(a.post.indexedAt)
     })
@@ -169,14 +258,33 @@ const formatDate = (dateStr) => {
   <div class="comments-section mt-16 pt-12 border-t">
     <div v-if="(props.blueskyUris?.length === 0 && !props.blueskyUri) || (threads.length === 0 && !loading)" class="text-center py-10 transition-all">
       <div v-if="(props.blueskyUris?.length > 0 || props.blueskyUri) && threads.length === 0 && !loading" class="mb-6">
-        <v-icon icon="mdi-link-variant-off" size="48" color="warning" class="mb-4 opacity-50"></v-icon>
-        <h3 class="text-h6 font-weight-bold mb-2">BlueSky threads not found.</h3>
-        <p class="text-secondary max-w-sm mx-auto mb-6">Linked posts might have been deleted or moved on BlueSky.</p>
+        <template v-if="unauthError">
+          <v-icon icon="mdi-lock-open-outline" size="48" color="warning" class="mb-4 opacity-50"></v-icon>
+          <h3 class="text-h6 font-weight-bold mb-2">Comments hidden</h3>
+          <p class="text-secondary max-w-sm mx-auto mb-2">
+            BlueSky requires authentication to view replies. You can open the thread(s) for this post on 
+            <span v-for="(link, idx) in blueSkyLinks" :key="link">
+              <a :href="link" target="_blank" class="font-weight-bold"> bsky.app</a><span v-if="idx < blueSkyLinks.length - 1">, </span>
+            </span>
+            or
+            <v-btn to="/login" variant="text" class="font-weight-bold pa-0 h-auto min-w-0">sign in</v-btn>
+            to see them inline.
+          </p>
+        </template>
+        <template v-else>
+          <v-icon icon="mdi-link-variant-off" size="48" color="warning" class="mb-4 opacity-50"></v-icon>
+          <h3 class="text-h6 font-weight-bold mb-2">BlueSky threads not found.</h3>
+          <p class="text-secondary max-w-sm mx-auto mb-6">Linked posts might have been deleted or moved on BlueSky.</p>
+        </template>
       </div>
       <div v-else class="mb-6">
         <h3 class="text-h6 font-weight-bold mb-4">No comments yet.</h3>
         <p v-if="isOwner" class="text-secondary mb-6">Start a conversation on BlueSky to enable comments.</p>
         <p v-else class="text-secondary">Discussion for this post hasn't started on BlueSky yet.</p>
+        <p v-if="!auth.user" class="text-secondary mt-4">
+          <v-btn to="/login" variant="text" class="font-weight-bold pa-0 h-auto min-w-0 mr-1">Sign in</v-btn>
+          with BlueSky to join the conversation.
+        </p>
       </div>
 
       <template v-if="auth.user">
@@ -254,13 +362,13 @@ const formatDate = (dateStr) => {
       <div v-else-if="replies.length > 0" class="replies-list">
         <div v-for="reply in replies" :key="reply.post.cid" class="reply-item py-6 border-b">
           <div class="d-flex align-start mb-2">
-            <v-avatar size="32" class="mr-3 mt-1">
+            <v-avatar size="32" class="mr-5 mt-1">
               <v-img v-if="reply.post.author.avatar" :src="reply.post.author.avatar" cover></v-img>
               <v-icon v-else icon="mdi-account" size="small"></v-icon>
             </v-avatar>
             <div class="flex-grow-1">
-              <div class="d-flex align-center gap-2">
-                <span class="text-subtitle-2 font-weight-black">{{ reply.post.author.displayName || reply.post.author.handle }}</span>
+              <div class="d-flex align-center gap-2 pl-2">
+                <span class="text-subtitle-2 font-weight-bold">{{ reply.post.author.displayName || reply.post.author.handle }}</span>
                 <a 
                   :href="'https://bsky.app/profile/' + reply.post.author.handle + '/post/' + reply.post.uri.split('/').pop()" 
                   target="_blank" 
@@ -269,7 +377,7 @@ const formatDate = (dateStr) => {
                   {{ formatDate(reply.post.indexedAt) }}
                 </a>
               </div>
-              <p class="text-body-1 mt-1 comment-text">{{ reply.post.record.text }}</p>
+              <p class="text-body-1 mt-1 comment-text pl-2">{{ reply.post.record.text }}</p>
             </div>
           </div>
           <div class="d-flex align-center pl-11 gap-4">

@@ -280,6 +280,12 @@ class AtprotoService {
                 return null
             }
 
+            // also ignore auth failures from public agent (treat as missing thread)
+            if (activeAgent === this.publicAgent && (error.status === 401 || error.status === 403 || error.message?.includes('Authentication'))) {
+                console.warn('Public fetch unauthorized, returning null thread:', uri)
+                return null
+            }
+
             console.error('Error fetching post thread:', error)
             throw error
         }

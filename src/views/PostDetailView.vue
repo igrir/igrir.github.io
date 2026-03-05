@@ -176,9 +176,20 @@ const formatText = (text) => {
         <template v-if="post.record.blocks">
           <div v-for="(block, index) in post.record.blocks" :key="index" class="mb-10 block-item">
             <p v-if="block.type === 'text'" class="story-paragraph" v-html="formatText(block.value)"></p>
+            <h1 v-else-if="block.type === 'h1'" class="story-h1" v-html="formatText(block.value)"></h1>
+            <h2 v-else-if="block.type === 'h2'" class="story-h2" v-html="formatText(block.value)"></h2>
+            <h3 v-else-if="block.type === 'h3'" class="story-h3" v-html="formatText(block.value)"></h3>
             <blockquote v-else-if="block.type === 'quote'" class="story-quote">
               <p>{{ block.value }}</p>
             </blockquote>
+
+            <div v-else-if="block.type === 'spacer'" class="story-spacer py-6 text-center">
+              <div class="d-flex align-center justify-center ga-3">
+                <span class="spacer-dot"></span>
+                <span class="spacer-dot"></span>
+                <span class="spacer-dot"></span>
+              </div>
+            </div>
 
             <div v-else-if="block.type === 'code'" class="story-code-block mb-10">
               <div v-if="block.language" class="code-lang-badge">{{ block.language }}</div>
@@ -283,6 +294,36 @@ const formatText = (text) => {
   letter-spacing: -0.003em;
 }
 
+.story-h1 {
+  font-family: var(--medium-font-sans);
+  font-size: 2.5rem;
+  line-height: 1.3;
+  font-weight: 800;
+  color: #242424;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.story-h2 {
+  font-family: var(--medium-font-sans);
+  font-size: 2rem;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #242424;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.story-h3 {
+  font-family: var(--medium-font-sans);
+  font-size: 1.5rem;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #242424;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
 .story-paragraph :deep(strong) {
   font-weight: 700;
 }
@@ -338,8 +379,21 @@ const formatText = (text) => {
   display: block;
   max-width: 100%;
   height: auto;
-  border-radius: 2px;
+  border-radius: 4px;
   margin: 3.5rem auto; /* More generous spacing around images */
+}
+
+.story-spacer {
+  margin: 2rem 0;
+}
+
+.spacer-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #242424;
+  opacity: 0.6;
 }
 
 .story-quote {

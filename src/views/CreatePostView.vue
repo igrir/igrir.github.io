@@ -99,12 +99,28 @@ const addTextBlock = (index) => {
   blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'text', value: '' })
 }
 
+const addH1Block = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'h1', value: '' })
+}
+
+const addH2Block = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'h2', value: '' })
+}
+
+const addH3Block = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'h3', value: '' })
+}
+
 const addQuoteBlock = (index) => {
   blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'quote', value: '' })
 }
 
 const addCodeBlock = (index) => {
   blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'code', value: '', language: 'javascript' })
+}
+
+const addSpacerBlock = (index) => {
+  blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'spacer', value: '' })
 }
 
 const addImageBlock = (index) => {
@@ -130,6 +146,32 @@ const removeBlock = (index) => {
   } else {
     blocks.value[0] = { id: Date.now(), type: 'text', value: '' }
   }
+}
+
+const handleEnter = (e, index) => {
+  const currentBlock = blocks.value[index]
+  const el = e.target
+  const caretPos = el.selectionStart
+  
+  const textBefore = currentBlock.value.substring(0, caretPos)
+  const textAfter = currentBlock.value.substring(caretPos)
+  
+  currentBlock.value = textBefore
+  
+  const newBlockIndex = index + 1
+  blocks.value.splice(newBlockIndex, 0, { id: Date.now(), type: 'text', value: textAfter })
+  
+  setTimeout(() => {
+    const wrappers = document.querySelectorAll('.block-wrapper')
+    if (wrappers[newBlockIndex]) {
+      const textarea = wrappers[newBlockIndex].querySelector('textarea')
+      if (textarea) {
+        textarea.focus()
+        textarea.selectionStart = 0
+        textarea.selectionEnd = 0
+      }
+    }
+  }, 50)
 }
 
 const moveBlock = (index, direction) => {
@@ -396,6 +438,10 @@ const handlePublish = async (saveAsDraft = false) => {
         if (block.value.trim()) {
           finalBlocks.push({ type: 'quote', value: block.value })
         }
+      } else if (['h1', 'h2', 'h3'].includes(block.type)) {
+        if (block.value.trim()) {
+          finalBlocks.push({ type: block.type, value: block.value })
+        }
       } else if (block.type === 'code') {
         if (block.value.trim()) {
           finalBlocks.push({ 
@@ -404,6 +450,8 @@ const handlePublish = async (saveAsDraft = false) => {
             language: block.language || 'javascript' 
           })
         }
+      } else if (block.type === 'spacer') {
+        finalBlocks.push({ type: 'spacer', value: '' })
       }
     }
     
@@ -580,13 +628,13 @@ const handlePublish = async (saveAsDraft = false) => {
             <div class="flex-grow-1">
               <div class="block-content-area">
                 <v-textarea
-                  v-if="block.type === 'text'"
+                  v-if="['text', 'h1', 'h2', 'h3'].includes(block.type)"
                   v-model="block.value"
-                  placeholder="Tell your story..."
+                  :placeholder="block.type === 'text' ? 'Tell your story...' : `Heading ${block.type.replace('h', '')}...`"
                   variant="plain"
                   auto-grow
                   rows="1"
-                  class="text-block-input text-serif"
+                  :class="`${block.type}-block-input text-serif`"
                   :disabled="loading"
                   hide-details
                   @focus="lastFocusedIndex = index"
@@ -600,6 +648,7 @@ const handlePublish = async (saveAsDraft = false) => {
                   @keydown.ctrl.i.prevent="wrapText($event, block, '*')"
                   @keydown.meta.u.prevent="wrapText($event, block, '__')"
                   @keydown.ctrl.u.prevent="wrapText($event, block, '__')"
+                  @keydown.enter.exact.prevent="handleEnter($event, index)"
                 ></v-textarea>
                 
                 <v-textarea
@@ -613,6 +662,7 @@ const handlePublish = async (saveAsDraft = false) => {
                   :disabled="loading"
                   hide-details
                   @keydown.tab.prevent="handleTab($event, block)"
+                  @keydown.enter.exact.prevent="handleEnter($event, index)"
                 ></v-textarea>
 
                 <div v-if="block.type === 'code'" class="code-block-editor position-relative">
@@ -644,15 +694,27 @@ const handlePublish = async (saveAsDraft = false) => {
                     <v-btn icon="mdi-close" color="white" variant="flat" size="small" class="rounded-pill" @click="removeBlock(index)" :disabled="loading"></v-btn>
                   </div>
                 </div>
+
+                <div v-if="block.type === 'spacer'" class="spacer-block-container py-4 text-center">
+                  <div class="d-flex align-center justify-center ga-3 my-4">
+                    <span class="spacer-dot"></span>
+                    <span class="spacer-dot"></span>
+                    <span class="spacer-dot"></span>
+                  </div>
+                </div>
               </div>
 
               <!-- Bottom Add Content Bar -->
               <div class="add-content-bar d-flex align-center justify-center mt-2">
                 <div class="add-buttons-container d-flex align-center ga-2">
                   <v-btn icon="mdi-plus" variant="text" size="x-small" color="secondary" class="add-btn" @click="addTextBlock(index)" title="Add Text" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-format-header-1" variant="text" size="x-small" color="secondary" class="add-btn" @click="addH1Block(index)" title="Add Heading 1" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-format-header-2" variant="text" size="x-small" color="secondary" class="add-btn" @click="addH2Block(index)" title="Add Heading 2" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-format-header-3" variant="text" size="x-small" color="secondary" class="add-btn" @click="addH3Block(index)" title="Add Heading 3" :disabled="loading"></v-btn>
                   <v-btn icon="mdi-format-quote-close" variant="text" size="x-small" color="secondary" class="add-btn" @click="addQuoteBlock(index)" title="Add Quote" :disabled="loading"></v-btn>
                   <v-btn icon="mdi-code-tags" variant="text" size="x-small" color="secondary" class="add-btn" @click="addCodeBlock(index)" title="Add Code" :disabled="loading"></v-btn>
                   <v-btn icon="mdi-camera-plus-outline" variant="text" size="x-small" color="secondary" class="add-btn" @click="addImageBlock(index)" title="Add Image" :disabled="loading"></v-btn>
+                  <v-btn icon="mdi-minus" variant="text" size="x-small" color="secondary" class="add-btn" @click="addSpacerBlock(index)" title="Add Spacer" :disabled="loading"></v-btn>
                 </div>
               </div>
             </div>
@@ -689,6 +751,47 @@ const handlePublish = async (saveAsDraft = false) => {
 
 .text-block-input :deep(textarea)::placeholder {
   color: #B3B3B1 !important;
+}
+
+.h1-block-input :deep(textarea) {
+  font-size: 2.5rem !important;
+  line-height: 1.3 !important;
+  font-weight: 800 !important;
+  color: #242424 !important;
+  font-family: var(--medium-font-sans) !important;
+}
+
+.h1-block-input :deep(textarea)::placeholder {
+  color: #B3B3B1 !important;
+  font-weight: 800 !important;
+}
+
+.h2-block-input :deep(textarea) {
+  font-size: 2rem !important;
+  line-height: 1.3 !important;
+  font-weight: 700 !important;
+  color: #242424 !important;
+  font-family: var(--medium-font-sans) !important;
+  margin-top: 0.5rem;
+}
+
+.h2-block-input :deep(textarea)::placeholder {
+  color: #B3B3B1 !important;
+  font-weight: 700 !important;
+}
+
+.h3-block-input :deep(textarea) {
+  font-size: 1.5rem !important;
+  line-height: 1.3 !important;
+  font-weight: 700 !important;
+  color: #242424 !important;
+  font-family: var(--medium-font-sans) !important;
+  margin-top: 0.5rem;
+}
+
+.h3-block-input :deep(textarea)::placeholder {
+  color: #B3B3B1 !important;
+  font-weight: 700 !important;
 }
 
 .quote-block-input :deep(textarea) {
@@ -854,6 +957,23 @@ const handlePublish = async (saveAsDraft = false) => {
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(0); }
   to { opacity: 1; transform: translateY(-5px); }
+}
+
+.format-toolbar-float.image-overlay .v-btn {
+  opacity: 0.8;
+}
+
+.image-overlay .v-btn:hover {
+  opacity: 1;
+}
+
+.spacer-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #242424;
+  opacity: 0.6;
 }
 
 .format-toolbar-floating .v-btn {

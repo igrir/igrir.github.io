@@ -81,7 +81,7 @@ const getSnippet = (item) => {
   let text = ''
   const { record } = item.post
   if (record.blocks) {
-    const contentBlock = record.blocks.find(b => ['text', 'quote', 'code'].includes(b.type))
+    const contentBlock = record.blocks.find(b => ['text', 'quote', 'code', 'h1', 'h2', 'h3'].includes(b.type))
     if (contentBlock) text = contentBlock.value
   } else {
     text = record.text || ''

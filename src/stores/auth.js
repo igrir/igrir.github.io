@@ -22,9 +22,14 @@ export const useAuthStore = defineStore('auth', {
             }
         },
         async checkSession() {
-            const data = await atproto.resumeSession()
-            if (data) {
-                this.user = data
+            this.loading = true
+            try {
+                const data = await atproto.resumeSession()
+                if (data) {
+                    this.user = data
+                }
+            } finally {
+                this.loading = false
             }
         },
         logout() {

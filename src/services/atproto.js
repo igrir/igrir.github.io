@@ -189,9 +189,28 @@ class AtprotoService {
         } catch (error) {
             // Ignore "Unknown authorization session" errors during resume. 
             // This happens if the user refreshes a page that still has stale OAuth params in the URL.
+            // We retry init() after normalizing the URL to ensure the session is recovered.
             if (error.message?.includes('Unknown authorization session')) {
-                console.warn('Stale OAuth parameters in URL ignored during resume')
+                console.warn('Stale OAuth parameters in URL - cleaning and retrying resume')
                 this.normalizeUrl()
+                // Retry init without the stale params
+                try {
+                    const retryResult = await this.client.init()
+                    if (retryResult?.session) {
+                        this.agent = new Agent(retryResult.session)
+                        this.agent.sub = retryResult.session.sub
+                        const profile = await this.agent.getProfile({ actor: retryResult.session.sub })
+                        return {
+                            did: retryResult.session.sub,
+                            handle: profile.data.handle,
+                            pdsUrl: retryResult.session.pdsUrl,
+                            profile: profile.data,
+                            isOAuth: true
+                        }
+                    }
+                } catch (retryError) {
+                    console.error('Retry resume failed:', retryError)
+                }
                 return null
             }
             console.error('Failed to resume session:', error)

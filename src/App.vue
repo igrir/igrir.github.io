@@ -77,7 +77,12 @@ const handleLogout = () => {
 
     <v-main class="bg-background">
       <v-container fluid class="px-4">
-        <router-view v-slot="{ Component }">
+        <template v-if="auth.loading && !auth.user">
+           <div class="d-flex justify-center align-center py-16">
+             <v-progress-circular indeterminate color="primary"></v-progress-circular>
+           </div>
+        </template>
+        <router-view v-else v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" />
           </transition>

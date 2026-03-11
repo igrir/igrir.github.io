@@ -7,8 +7,15 @@ const SETTINGS_COLLECTION = 'xyz.atoblog.settings'
 class AtprotoService {
     constructor() {
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        const devBaseUrl = isLocal ? 'http://127.0.0.1:5173' : 'https://' + window.location.hostname
-        const baseUrl = import.meta.env.VITE_BASE_URL || devBaseUrl
+        let baseUrl = import.meta.env.VITE_BASE_URL || (isLocal ? 'http://127.0.0.1:5173' : 'https://' + window.location.hostname)
+        
+        // Ensure baseUrl has a protocol
+        if (!baseUrl.startsWith('http')) {
+            baseUrl = 'https://' + baseUrl
+        }
+        
+        // Remove trailing slash if present to avoid double-slashes during join
+        baseUrl = baseUrl.replace(/\/$/, '')
 
         // Adopt the loopbackId pattern for localhost to ensure redirect and scope stability
         const fullScopes = 'atproto transition:generic repo:xyz.atoblog.settings repo:xyz.atoblog.post'

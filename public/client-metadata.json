@@ -1,20 +1,20 @@
 {
-    "client_id": "http://localhost/?redirect_uri=http%3A%2F%2F127.0.0.1%3A5173%2F&scope=atproto%20transition%3Ageneric%20repo%3Axyz.atoblog.settings%20repo%3Axyz.atoblog.post",
-    "client_name": "Brot! (Local)",
-    "client_uri": "http://127.0.0.1:5173",
-    "logo_uri": "http://127.0.0.1:5173/blogat.png",
-    "redirect_uris": [
-        "http://127.0.0.1:5173/"
-    ],
-    "scope": "atproto transition:generic repo:xyz.atoblog.settings repo:xyz.atoblog.post",
-    "grant_types": [
-        "authorization_code",
-        "refresh_token"
-    ],
-    "response_types": [
-        "code"
-    ],
-    "token_endpoint_auth_method": "none",
-    "application_type": "native",
-    "dpop_bound_access_tokens": true
+  "client_id": "http://127.0.0.1:5173/client-metadata.json",
+  "client_name": "Brot!",
+  "client_uri": "http://127.0.0.1:5173",
+  "logo_uri": "http://127.0.0.1:5173/blogat.png",
+  "redirect_uris": [
+    "http://127.0.0.1:5173/"
+  ],
+  "scope": "atproto transition:generic repo:xyz.atoblog.settings repo:xyz.atoblog.post",
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none",
+  "application_type": "native",
+  "dpop_bound_access_tokens": true
 }

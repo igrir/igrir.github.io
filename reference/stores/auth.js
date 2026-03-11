@@ -8,12 +8,12 @@ export const useAuthStore = defineStore('auth', {
         error: null,
     }),
     actions: {
-        async login(handle) {
+        async login(identifier, password) {
             this.loading = true
             this.error = null
             try {
-                // For OAuth, this will redirect away from the page
-                await atproto.login(handle)
+                const data = await atproto.login(identifier, password)
+                this.user = data
             } catch (err) {
                 this.error = err.message || 'Login failed'
                 throw err

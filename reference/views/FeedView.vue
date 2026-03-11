@@ -11,8 +11,6 @@ const posts = ref([])
 const loading = ref(false)
 const filterTag = ref(route.query.tag || '')
 const blogOwner = import.meta.env.VITE_BLOG_OWNER || 'igrir.bsky.social'
-// console.log('FeedView: blogOwner:', blogOwner)
-
 const settings = ref({
   title: 'Reflections on Decentralization',
   description: 'Stories and insights from the AT Protocol'
@@ -21,16 +19,11 @@ const settings = ref({
 const repoProfile = ref({ handle: '', avatar: '' })
 
 // compute which repository's feed we should show (env default or route param)
-const currentRepo = computed(() => {
-  const r = route.params.repo || blogOwner || 'igrir.bsky.social'
-  if (!r || r === 'undefined' || r === 'null') return 'igrir.bsky.social'
-  return r
-})
+const currentRepo = computed(() => route.params.repo || blogOwner)
 
 // whether the active user owns this repo
 const isOwner = computed(() => {
-  const repo = currentRepo.value
-  return auth.user && (auth.user.handle === repo || auth.user.did === repo)
+  return auth.user && (auth.user.handle === currentRepo.value || auth.user.did === currentRepo.value)
 })
 
 watch(() => route.query.tag, (newTag) => {

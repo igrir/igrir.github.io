@@ -1,37 +1,10 @@
-import { BskyAgent, Agent } from '@atproto/api'
-import { BrowserOAuthClient } from '@atproto/oauth-client-browser'
+import { BskyAgent } from '@atproto/api'
 
 const BLOG_COLLECTION = 'xyz.atoblog.post'
 const SETTINGS_COLLECTION = 'xyz.atoblog.settings'
 
 class AtprotoService {
     constructor() {
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        const devBaseUrl = isLocal ? 'http://127.0.0.1:5173' : 'https://' + window.location.hostname
-        const baseUrl = import.meta.env.VITE_BASE_URL || devBaseUrl
-
-        // Adopt the loopbackId pattern for localhost to ensure redirect and scope stability
-        const fullScopes = 'atproto transition:generic repo:xyz.atoblog.settings repo:xyz.atoblog.post'
-        const encodedRedirect = encodeURIComponent(baseUrl + '/')
-        const encodedScope = encodeURIComponent(fullScopes)
-        const loopbackId = `http://localhost/?redirect_uri=${encodedRedirect}&scope=${encodedScope}`
-
-        this.client = new BrowserOAuthClient({
-            handleResolver: 'https://bsky.social',
-            clientMetadata: {
-                client_id: isLocal ? loopbackId : `${baseUrl}/client-metadata.json`,
-                client_name: 'Brot!',
-                client_uri: baseUrl,
-                redirect_uris: [`${baseUrl}/`],
-                scope: fullScopes,
-                grant_types: ['authorization_code', 'refresh_token'],
-                response_types: ['code'],
-                token_endpoint_auth_method: 'none',
-                application_type: 'native',
-                dpop_bound_access_tokens: true
-            }
-        })
-
         this.agent = new BskyAgent({
             service: 'https://bsky.social',
         })
@@ -68,7 +41,7 @@ class AtprotoService {
             }
 
             const response = await this.agent.api.com.atproto.repo.putRecord({
-                repo: this.agent.sub || this.agent.session?.did || this.agent.session?.handle,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: SETTINGS_COLLECTION,
                 rkey: 'self',
                 record: record
@@ -81,142 +54,40 @@ class AtprotoService {
         }
     }
 
-    async login(handle) {
+    async login(identifier, password) {
         try {
-            // Use handle if provided, otherwise default to BlueSky's PDS URL
-            // Using the full URL 'https://bsky.social' ensures it's treated as a service, not a handle
-            const discoverHandle = (handle && handle.trim()) ? handle.trim() : 'https://bsky.social'
-            await this.client.signIn(discoverHandle)
+            const { data } = await this.agent.login({ identifier, password })
+            const profile = await this.agent.getProfile({ actor: data.did })
+            const sessionWithProfile = { ...data, profile: profile.data }
+            localStorage.setItem('atp_session', JSON.stringify(sessionWithProfile))
+            return sessionWithProfile
         } catch (error) {
-            console.error('OAuth sign-in failed:', error)
-            throw error
-        }
-    }
-
-    async handleCallback() {
-        try {
-            const result = await this.client.init()
-            if (result?.session) {
-                console.log('OAuth callback success. Session sub:', result.session.sub)
-
-                // Clear OAuth parameters from URL after successful callback
-                this.normalizeUrl()
-                console.log('OAuth redirect handling successful. Session found.')
-
-                // MODERN APPROACH: Initialize Agent directly with the session
-                // This handles DPoP, PDS resolving, and fetcher binding automatically.
-                this.agent = new Agent(result.session)
-
-                // Identity data
-                this.agent.sub = result.session.sub
-
-                // Get profile
-                const profile = await this.agent.getProfile({ actor: result.session.sub })
-
-                const sessionWithProfile = {
-                    did: result.session.sub,
-                    handle: profile.data.handle,
-                    pdsUrl: result.session.pdsUrl,
-                    profile: profile.data,
-                    isOAuth: true
-                }
-                console.log('Final session with profile:', sessionWithProfile)
-                return sessionWithProfile
-            }
-            return null
-        } catch (error) {
-            console.error('OAuth callback handling failed:', error)
+            console.error('Login failed:', error)
             throw error
         }
     }
 
     async resumeSession() {
-        try {
-            const result = await this.client.init()
-            if (result?.session) {
-                // Clear OAuth parameters if they were present (e.g. after refresh on callback URL)
-                this.normalizeUrl()
-
-                console.log('OAuth session found:', result.session)
-
-                // MODERN APPROACH: Initialize Agent directly with the recovered session
-                this.agent = new Agent(result.session)
-
-                // Compatibility identity
-                this.agent.sub = result.session.sub
-
-                try {
-                    const profile = await this.agent.getProfile({ actor: result.session.sub })
-                    return {
-                        did: result.session.sub,
-                        handle: profile.data.handle,
-                        pdsUrl: result.session.pdsUrl,
-                        profile: profile.data,
-                        isOAuth: true
-                    }
-                } catch (pErr) {
-                    console.warn('Could not refresh profile during resume:', pErr)
-                    return {
-                        did: result.session.sub,
-                        handle: (result.session).handle || result.session.sub,
-                        pdsUrl: result.session.pdsUrl,
-                        profile: null,
-                        isOAuth: true
-                    }
-                }
+        const session = localStorage.getItem('atp_session')
+        if (session) {
+            try {
+                const sessionData = JSON.parse(session)
+                await this.agent.resumeSession(sessionData)
+                // Refresh profile data
+                const profile = await this.agent.getProfile({ actor: sessionData.did })
+                sessionData.profile = profile.data
+                localStorage.setItem('atp_session', JSON.stringify(sessionData))
+                return sessionData
+            } catch (error) {
+                console.error('Failed to resume session:', error)
+                localStorage.removeItem('atp_session')
             }
-            console.log('No OAuth session found during resume')
-
-            // Fallback to legacy session for transition or if user still uses it
-            const legacySession = localStorage.getItem('atp_session')
-            if (legacySession) {
-                const sessionData = JSON.parse(legacySession)
-                if (!sessionData.isOAuth) {
-                    await this.agent.resumeSession(sessionData)
-                    const profile = await this.agent.getProfile({ actor: sessionData.did })
-                    sessionData.profile = profile.data
-                    localStorage.setItem('atp_session', JSON.stringify(sessionData))
-                    return sessionData
-                }
-            }
-        } catch (error) {
-            // Ignore "Unknown authorization session" errors during resume. 
-            // This happens if the user refreshes a page that still has stale OAuth params in the URL.
-            if (error.message?.includes('Unknown authorization session')) {
-                console.warn('Stale OAuth parameters in URL ignored during resume')
-                this.normalizeUrl()
-                return null
-            }
-            console.error('Failed to resume session:', error)
         }
         return null
     }
 
-    // Helper to remove OAuth parameters (code, state, iss) from the URL
-    normalizeUrl() {
-        if (!window.history.replaceState) return
-        const url = new URL(window.location.href)
-        let changed = false
-        if (url.searchParams.has('code')) { url.searchParams.delete('code'); changed = true }
-        if (url.searchParams.has('state')) { url.searchParams.delete('state'); changed = true }
-        if (url.searchParams.has('iss')) { url.searchParams.delete('iss'); changed = true }
-
-        if (changed) {
-            window.history.replaceState({}, document.title, url.pathname + url.search + url.hash)
-        }
-    }
-
-    async logout() {
+    logout() {
         localStorage.removeItem('atp_session')
-        // OAuth logout
-        try {
-            const result = await this.client.init()
-            if (result?.session) {
-                await result.session.signOut()
-            }
-        } catch (e) {
-            console.warn('OAuth signOut failed:', e)
-        }
         this.agent = new BskyAgent({ service: 'https://bsky.social' })
         if (this.onLogout) this.onLogout()
     }
@@ -351,7 +222,7 @@ class AtprotoService {
             }
 
             const response = await this.agent.api.com.atproto.repo.createRecord({
-                repo: this.agent.sub || this.agent.session?.did || this.agent.session?.handle,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 record: record
             })
@@ -380,7 +251,7 @@ class AtprotoService {
             }
 
             const response = await this.agent.api.com.atproto.repo.putRecord({
-                repo: this.agent.sub || this.agent.session?.did || this.agent.session?.handle,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 rkey: rkey,
                 record: record
@@ -394,9 +265,8 @@ class AtprotoService {
     }
 
     async getPostThread(uri) {
-        // Prefer authenticated agent if we have a session (OAuth sub or legacy session)
-        const hasSession = this.agent && (this.agent.sub || this.agent.session)
-        const activeAgent = hasSession ? this.agent : this.publicAgent
+        // Prefer authenticated agent if we have a session
+        const activeAgent = this.agent.session ? this.agent : this.publicAgent
         try {
             const response = await activeAgent.api.app.bsky.feed.getPostThread({
                 uri: uri,
@@ -439,15 +309,12 @@ class AtprotoService {
     async postToBluesky(text, embed = null) {
         try {
             const record = {
-                $type: 'app.bsky.feed.post',
                 text: text,
                 createdAt: new Date().toISOString()
             }
             if (embed) record.embed = embed
 
-            const response = await this.agent.api.app.bsky.feed.post.create({
-                repo: this.agent.sub || this.agent.session?.did
-            }, record)
+            const response = await this.agent.post(record)
             return response
         } catch (error) {
             if (error.status === 401) this.logout()
@@ -458,10 +325,7 @@ class AtprotoService {
 
     async replyToBluesky(text, root, parent) {
         try {
-            const response = await this.agent.api.app.bsky.feed.post.create({
-                repo: this.agent.sub || this.agent.session?.did
-            }, {
-                $type: 'app.bsky.feed.post',
+            const response = await this.agent.post({
                 text: text,
                 reply: {
                     root: { uri: root.uri, cid: root.cid },
@@ -479,12 +343,7 @@ class AtprotoService {
 
     async like(uri, cid) {
         try {
-            return await this.agent.api.app.bsky.feed.like.create({
-                repo: this.agent.sub || this.agent.session?.did
-            }, {
-                subject: { uri, cid },
-                createdAt: new Date().toISOString()
-            })
+            return await this.agent.like(uri, cid)
         } catch (error) {
             if (error.status === 401) this.logout()
             throw error
@@ -493,12 +352,7 @@ class AtprotoService {
 
     async unlike(likeUri) {
         try {
-            const [repo, collection, rkey] = likeUri.replace('at://', '').split('/')
-            return await this.agent.api.com.atproto.repo.deleteRecord({
-                repo: repo,
-                collection: collection,
-                rkey: rkey
-            })
+            return await this.agent.deleteLike(likeUri)
         } catch (error) {
             if (error.status === 401) this.logout()
             throw error
@@ -507,12 +361,7 @@ class AtprotoService {
 
     async repost(uri, cid) {
         try {
-            return await this.agent.api.app.bsky.feed.repost.create({
-                repo: this.agent.sub || this.agent.session?.did
-            }, {
-                subject: { uri, cid },
-                createdAt: new Date().toISOString()
-            })
+            return await this.agent.repost(uri, cid)
         } catch (error) {
             if (error.status === 401) this.logout()
             throw error
@@ -521,12 +370,7 @@ class AtprotoService {
 
     async deleteRepost(repostUri) {
         try {
-            const [repo, collection, rkey] = repostUri.replace('at://', '').split('/')
-            return await this.agent.api.com.atproto.repo.deleteRecord({
-                repo: repo,
-                collection: collection,
-                rkey: rkey
-            })
+            return await this.agent.deleteRepost(repostUri)
         } catch (error) {
             if (error.status === 401) this.logout()
             throw error
@@ -536,7 +380,7 @@ class AtprotoService {
     async deletePost(rkey) {
         try {
             const response = await this.agent.api.com.atproto.repo.deleteRecord({
-                repo: this.agent.sub || this.agent.session?.did || this.agent.session?.handle,
+                repo: this.agent.session?.did || this.agent.session?.handle,
                 collection: BLOG_COLLECTION,
                 rkey: rkey
             })

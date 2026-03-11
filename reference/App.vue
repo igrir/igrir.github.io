@@ -36,28 +36,34 @@ const handleLogout = () => {
       <v-btn to="/" variant="text" class="mx-1" prepend-icon="mdi-home">Feed</v-btn>
       
       <template v-if="auth.user">
-        <v-btn to="/new-post" variant="text" class="mx-1 d-none d-sm-inline-flex" prepend-icon="mdi-pencil">New Post</v-btn>
-        
-        <div class="d-flex align-center ml-2 mr-1 py-1 px-3 rounded-pill bg-grey-lighten-4 border transition-all hover-glow">
-          <span class="text-caption font-weight-black text-secondary mr-3 d-none d-md-inline">{{ auth.user.handle }}</span>
-          <v-menu location="bottom end">
-            <template v-slot:activator="{ props }">
-              <v-avatar v-bind="props" size="28" class="cursor-pointer border" color="white">
-                <v-img 
-                  v-if="auth.user?.profile?.avatar"
-                  :src="auth.user.profile.avatar"
-                  cover
-                >
-                  <template v-slot:placeholder>
-                    <v-progress-circular indeterminate size="18" width="2"></v-progress-circular>
-                  </template>
-                  <template v-slot:error>
-                    <v-icon icon="mdi-account" size="small"></v-icon>
-                  </template>
-                </v-img>
-                <v-icon v-else icon="mdi-account" size="small"></v-icon>
-              </v-avatar>
-            </template>
+        <v-btn to="/new-post" variant="text" class="mx-1" prepend-icon="mdi-pencil">New Post</v-btn>
+        <v-btn
+          v-if="auth.user.handle !== blogOwner && auth.user.did !== blogOwner"
+          :to="`/post/${auth.user.handle}`"
+          variant="text"
+          class="mx-1"
+          prepend-icon="mdi-account-circle"
+        >
+          Your Posts
+        </v-btn>
+        <v-menu location="bottom end">
+          <template v-slot:activator="{ props }">
+            <v-avatar v-bind="props" size="36" class="cursor-pointer mx-2 border" color="surface">
+              <v-img 
+                v-if="auth.user?.profile?.avatar"
+                :src="auth.user.profile.avatar"
+                cover
+              >
+                <template v-slot:placeholder>
+                  <v-progress-circular indeterminate size="18" width="2"></v-progress-circular>
+                </template>
+                <template v-slot:error>
+                  <v-icon icon="mdi-account"></v-icon>
+                </template>
+              </v-img>
+              <v-icon v-else icon="mdi-account"></v-icon>
+            </v-avatar>
+          </template>
           <v-list density="compact" class="rounded-lg py-2" width="200">
             <v-list-item :title="auth.user.handle" :subtitle="auth.user.did">
               <template v-slot:prepend>
@@ -70,8 +76,7 @@ const handleLogout = () => {
             <v-list-item @click="handleLogout" prepend-icon="mdi-logout" color="error">Sign Out</v-list-item>
           </v-list>
         </v-menu>
-      </div>
-    </template>
+      </template>
       <v-btn v-else to="/login" variant="text" size="small" class="rounded-pill px-4">Sign In</v-btn>
     </v-app-bar>
 

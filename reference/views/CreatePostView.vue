@@ -25,7 +25,6 @@ const originalCreatedAt = ref('')
 const tags = ref([])
 const tagInput = ref('')
 const isDraft = ref(false)
-const isDragging = ref(false)
 
 const loadPost = async () => {
   const queryRkey = route.query.rkey
@@ -129,23 +128,19 @@ const addSpacerBlock = (index) => {
   blocks.value.splice(index + 1, 0, { id: Date.now(), type: 'spacer', value: '' })
 }
 
-const insertImageFile = (file, index) => {
-  if (!file) return
-  blocks.value.splice(index + 1, 0, {
-    id: Date.now(),
-    type: 'image',
-    file: file,
-    preview: URL.createObjectURL(file)
-  })
-}
-
 const addImageBlock = (index) => {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'image/*'
   input.onchange = (e) => {
     const file = e.target.files[0]
-    insertImageFile(file, index)
+    if (!file) return
+    blocks.value.splice(index + 1, 0, {
+      id: Date.now(),
+      type: 'image',
+      file: file,
+      preview: URL.createObjectURL(file)
+    })
   }
   input.click()
 }
@@ -406,36 +401,17 @@ const handlePaste = (e) => {
   for (const item of items) {
     if (item.type.indexOf('image') !== -1) {
       const file = item.getAsFile()
-      insertImageFile(file, lastFocusedIndex.value)
-    }
-  }
-}
-
-const handleDrop = (e) => {
-  isDragging.value = false
-  const files = e.dataTransfer.files
-  if (files && files.length > 0) {
-    let insertIndex = lastFocusedIndex.value
-    // If no blocks, start at -1 to insert at 0
-    if (blocks.value.length === 0) insertIndex = -1
-    
-    for (const file of files) {
-      if (file.type.startsWith('image/')) {
-        insertImageFile(file, insertIndex)
-        insertIndex++ // Increment for subsequent images
+      if (file) {
+        // Insert after the last focused block or at the end
+        const insertIndex = lastFocusedIndex.value + 1
+        blocks.value.splice(insertIndex, 0, {
+          id: Date.now(),
+          type: 'image',
+          file: file,
+          preview: URL.createObjectURL(file)
+        })
       }
     }
-  }
-}
-
-const handleDragOver = (e) => {
-  isDragging.value = true
-}
-
-const handleDragLeave = (e) => {
-  // Only set to false if we're leaving the main container, not entering a child
-  if (e.relatedTarget === null || !e.currentTarget.contains(e.relatedTarget)) {
-    isDragging.value = false
   }
 }
 
@@ -570,23 +546,7 @@ const handlePublish = async (saveAsDraft = false) => {
         </div>
       </template>
     </div>
-    <v-col 
-      cols="12" 
-      md="10" 
-      lg="8" 
-      :class="['editor-col', { 'is-dragging': isDragging }]" 
-      @paste="handlePaste"
-      @drop.prevent="handleDrop"
-      @dragover.prevent="handleDragOver"
-      @dragleave.prevent="handleDragLeave"
-    >
-      <div v-if="isDragging" class="drag-overlay d-flex align-center justify-center">
-        <div class="drag-message p-8 rounded-xl bg-white elevation-4 text-center">
-          <v-icon icon="mdi-cloud-upload-outline" size="64" color="primary" class="mb-4"></v-icon>
-          <div class="text-h5 font-weight-bold">Drop your images here</div>
-          <div class="text-subtitle-1 text-secondary">to add them to your story</div>
-        </div>
-      </div>
+    <v-col cols="12" md="10" lg="8" class="editor-col" @paste="handlePaste">
       <div class="d-flex align-center mb-12" style="gap: 16px;">
         <v-btn 
           :to="isEdit ? (
@@ -629,16 +589,14 @@ const handlePublish = async (saveAsDraft = false) => {
         </div>
       </v-alert>
 
-      <v-textarea
+      <v-text-field
         v-model="title"
         placeholder="Title"
         variant="plain"
-        auto-grow
-        rows="1"
         class="title-input mb-2"
         :disabled="loading"
         hide-details
-      ></v-textarea>
+      ></v-text-field>
 
       <div class="tags-input-container mb-12">
         <div class="d-flex flex-wrap ga-3 mb-3">
@@ -786,34 +744,9 @@ const handlePublish = async (saveAsDraft = false) => {
 <style scoped>
 .editor-col {
   max-width: 720px !important;
-  position: relative;
-  transition: all 0.3s ease;
 }
 
-.is-dragging {
-  background-color: rgba(var(--v-theme-primary), 0.03);
-}
-
-.drag-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(4px);
-  z-index: 100;
-  pointer-events: none;
-  border: 2px dashed rgba(var(--v-theme-primary), 0.4);
-  margin: 12px;
-  border-radius: 12px;
-}
-
-.drag-message {
-  pointer-events: none;
-}
-
-.title-input :deep(textarea) {
+.title-input :deep(input) {
   font-size: 3rem !important;
   font-weight: 800 !important;
   line-height: 1.2 !important;

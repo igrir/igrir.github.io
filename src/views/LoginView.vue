@@ -7,22 +7,24 @@ const auth = useAuthStore()
 const router = useRouter()
 
 const identifier = ref('')
-const password = ref('')
-const showPassword = ref(false)
+const showCustomHandle = ref(false)
 const loading = ref(false)
 const error = ref('')
 
 const handleLogin = async () => {
-  if (!identifier.value || !password.value) return
+  // Guard removed to allow one-tap login with default handle
   
-  loading.ref = true
+  loading.value = true
   error.value = ''
   
   try {
-    await auth.login(identifier.value, password.value)
-    router.push('/')
+    // This will redirect to the PDS/OAuth provider
+    // We default to bsky.social if no custom handle is entered
+    const handle = (showCustomHandle.value && identifier.value) ? identifier.value : ''
+    await auth.login(handle)
   } catch (err) {
-    error.value = 'Invalid identifier or app password.'
+    error.value = 'Failed to initiate login. Please check your handle.'
+    console.error(err)
   } finally {
     loading.value = false
   }
@@ -39,30 +41,10 @@ const handleLogin = async () => {
           <p class="text-medium-emphasis">Use your BlueSky or ATProto handle</p>
         </div>
 
-        <v-form @submit.prevent="handleLogin">
-          <v-text-field
-            v-model="identifier"
-            label="Handle or Email"
-            placeholder="alice.bsky.social"
-            variant="outlined"
-            prepend-inner-icon="mdi-at"
-            class="mb-4"
-            rounded="lg"
-          ></v-text-field>
-
-          <v-text-field
-            v-model="password"
-            label="App Password"
-            :type="showPassword ? 'text' : 'password'"
-            variant="outlined"
-            prepend-inner-icon="mdi-lock"
-            :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-            @click:append-inner="showPassword = !showPassword"
-            class="mb-6"
-            rounded="lg"
-            hint="Generate an App Password in your settings"
-            persistent-hint
-          ></v-text-field>
+        <v-form @submit.prevent="handleLogin" class="text-center">
+          <p class="text-caption text-medium-emphasis mb-6">
+            You will be redirected to BlueSky to securely authorize this application.
+          </p>
 
           <v-alert v-if="error" type="error" variant="tonal" class="mb-6 rounded-lg text-caption">
             {{ error }}
@@ -70,15 +52,38 @@ const handleLogin = async () => {
 
           <v-btn
             block
-            color="primary"
+            color="#0085ff"
             size="x-large"
             type="submit"
-            :loading="auth.loading"
-            class="rounded-lg font-weight-bold"
-            elevation="8"
+            :loading="loading"
+            class="rounded-xl font-weight-black text-white mb-6 py-4"
+            elevation="12"
+            prepend-icon="mdi-butterfly"
+            height="72"
           >
-            Sign In
+            Sign in with BlueSky
           </v-btn>
+          
+          <div class="text-caption text-medium-emphasis">
+            Using a custom PDS? <a href="#" @click.prevent="showCustomHandle = !showCustomHandle" class="text-primary">Advanced options</a>
+          </div>
+
+          <v-expand-transition>
+            <div v-if="showCustomHandle" class="mt-6">
+              <v-text-field
+                v-model="identifier"
+                label="Custom Handle"
+                placeholder="user.custom-pds.com"
+                variant="outlined"
+                density="compact"
+                rounded="lg"
+                color="primary"
+                hide-details
+                class="mb-2"
+              ></v-text-field>
+              <p class="text-xxs text-left text-medium-emphasis px-1">Only needed if you are NOT on bsky.social</p>
+            </div>
+          </v-expand-transition>
         </v-form>
 
         <div class="mt-8 text-center text-caption text-medium-emphasis">

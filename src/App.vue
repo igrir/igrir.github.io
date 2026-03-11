@@ -27,7 +27,7 @@ const handleLogout = () => {
     <v-app-bar flat class="glass-nav px-4">
       <router-link to="/" class="text-decoration-none d-flex align-center">
         <v-app-bar-title class="font-weight-black text-h5 no-ellipsis">
-          <span class="text-primary">IGRIR</span>netlify
+          <span class="text-primary">igrir</span>talks
         </v-app-bar-title>
       </router-link>
 

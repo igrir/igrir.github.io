@@ -6,6 +6,17 @@ const SETTINGS_COLLECTION = 'xyz.atoblog.settings'
 
 class AtprotoService {
     constructor() {
+        this.initClient()
+        this.agent = new BskyAgent({
+            service: 'https://bsky.social',
+        })
+        this.publicAgent = new BskyAgent({
+            service: 'https://bsky.social',
+        })
+        this.onLogout = null
+    }
+
+    initClient() {
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         let baseUrl = import.meta.env.VITE_BASE_URL || (isLocal ? 'http://127.0.0.1:5173' : 'https://' + window.location.hostname)
         
@@ -38,14 +49,6 @@ class AtprotoService {
                 dpop_bound_access_tokens: true
             }
         })
-
-        this.agent = new BskyAgent({
-            service: 'https://bsky.social',
-        })
-        this.publicAgent = new BskyAgent({
-            service: 'https://bsky.social',
-        })
-        this.onLogout = null
     }
 
     async getSettings(repo) {
@@ -191,8 +194,12 @@ class AtprotoService {
             // This happens if the user refreshes a page that still has stale OAuth params in the URL.
             // We retry init() after normalizing the URL to ensure the session is recovered.
             if (error.message?.includes('Unknown authorization session')) {
-                console.warn('Stale OAuth parameters in URL - cleaning and retrying resume')
+                console.warn('Stale OAuth parameters in URL - cleaning and retrying resume with fresh client')
                 this.normalizeUrl()
+                
+                // Re-initialize the client to ensure it's not holding onto the old URL/state
+                this.initClient()
+
                 // Retry init without the stale params
                 try {
                     const retryResult = await this.client.init()
@@ -209,7 +216,7 @@ class AtprotoService {
                         }
                     }
                 } catch (retryError) {
-                    console.error('Retry resume failed:', retryError)
+                    console.error('Retry resume failed after client re-init:', retryError)
                 }
                 return null
             }

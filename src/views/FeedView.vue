@@ -104,8 +104,8 @@ const fetchPosts = async () => {
 
 onMounted(fetchPosts)
 
-// also refetch if tag or repo parameter changes
-watch(filterTag, fetchPosts)
+// also refetch if tag, repo parameter changes, or login status changes
+watch([filterTag, isOwner], fetchPosts)
 
 const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleDateString(undefined, {

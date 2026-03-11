@@ -6,10 +6,11 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH || '/bloproto/',
+  base: '/',
   plugins: [
     vue(),
-    vueDevTools(),
+    // Only use devtools in development
+    ...(process.env.NODE_ENV === 'development' ? [vueDevTools()] : []),
   ],
   resolve: {
     alias: {
